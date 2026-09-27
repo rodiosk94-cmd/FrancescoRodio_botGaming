@@ -2,13 +2,15 @@ name: Automated Gaming News Agent
 
 on:
   schedule:
-    # Esegue automaticamente ogni giorno alle 08:00 e alle 20:00 UTC
-    - cron: '0 8,20 * * *'
+    # Orari in UTC. Con l'ora legale: 04:00 e 22:00 UTC = 06:00 e 00:00 in Italia.
+    # Dal 25 ottobre (ora solare) cambia in: '0 5,23 * * *'
+    - cron: '0 4,22 * * *'
   workflow_dispatch: # Permette di avviare l'automazione manualmente con un pulsante
 
 jobs:
   run-agent:
     runs-on: ubuntu-latest
+    timeout-minutes: 20 # interrompe il job se si blocca, per non consumare minuti
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,4 +29,5 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python Main.py
+        run: python -u Main.py # -u = log in tempo reale
+
