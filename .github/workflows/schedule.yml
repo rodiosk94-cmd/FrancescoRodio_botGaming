@@ -2,9 +2,9 @@ name: Automated Gaming News Agent
 
 on:
   schedule:
-    # Orari in UTC. Con l'ora legale: 04:00 e 22:00 UTC = 06:00 e 00:00 in Italia.
-    # Dal 25 ottobre (ora solare) cambia in: '0 5,23 * * *'
-    - cron: '0 4,22 * * *'
+    # Orari in UTC. Con l'ora legale: 04:00 e 18:00 UTC = 06:00 e 20:00 in Italia.
+    # Dal 25 ottobre (ora solare) cambia in: '0 5,19 * * *'
+    - cron: '0 4,18 * * *'
   workflow_dispatch: # Permette di avviare l'automazione manualmente con un pulsante
 
 jobs:
