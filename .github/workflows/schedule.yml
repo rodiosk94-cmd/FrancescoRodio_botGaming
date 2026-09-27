@@ -1,0 +1,30 @@
+name: Automated Gaming News Agent
+
+on:
+  schedule:
+    # Esegue automaticamente ogni giorno alle 08:00 e alle 20:00 UTC
+    - cron: '0 8,20 * * *'
+  workflow_dispatch: # Permette di avviare l'automazione manualmente con un pulsante
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install google-genai requests
+
+      - name: Run News Generator
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python Main.py
