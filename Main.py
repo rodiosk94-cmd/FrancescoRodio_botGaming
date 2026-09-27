@@ -36,17 +36,62 @@ response = client.models.generate_content(
     ),
 )
 
-article_text = response.text
+import html
+import re
+import sys
+import time
 
-# 3. Invio a Telegram (gestendo il limite di caratteri per messaggio)
+article_text = response.text
+if not article_text:
+    sys.exit("Gemini ha restituito una risposta vuota: niente da inviare.")
+
+# 3. Invio a Telegram
 bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
 chat_id = os.environ["TELEGRAM_CHAT_ID"]
+TG_URL = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+LIMIT = 4000  # Telegram: max 4096 caratteri, contati dopo il parsing dell'HTML
 
-def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    # Telegram accetta max 4000 caratteri a messaggio, dividiamo se necessario
-    for i in range(0, len(text), 4000):
-        chunk = text[i:i+4000]
-        requests.post(url, json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"})
 
-send_telegram_message(article_text)
+def md_to_html(md: str) -> str:
+    """Markdown di Gemini -> HTML di Telegram (titoli, grassetto, link)."""
+    t = html.escape(md, quote=False)
+    t = re.sub(r"^#{1,6}\s*(.+)$",
+               lambda m: "<b>" + m.group(1).replace("*", "") + "</b>", t, flags=re.M)
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    t = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', t)
+    return t
+
+
+def split_text(text: str, limit: int = LIMIT) -> list[str]:
+    """Divide sui fine riga, mai a meta' parola o a meta' formattazione."""
+    chunks, cur = [], ""
+    for line in text.splitlines(keepends=True):
+        while len(line) > limit:  # singola riga piu' lunga del limite
+            if cur.strip():
+                chunks.append(cur)
+            cur = ""
+            chunks.append(line[:limit])
+            line = line[limit:]
+        if len(cur) + len(line) > limit:
+            if cur.strip():
+                chunks.append(cur)
+            cur = ""
+        cur += line
+    if cur.strip():
+        chunks.append(cur)
+    return chunks
+
+
+def send_chunk(chunk: str) -> None:
+    base = {"chat_id": chat_id, "link_preview_options": {"is_disabled": True}}
+    r = requests.post(TG_URL, json={**base, "text": md_to_html(chunk),
+                                    "parse_mode": "HTML"}, timeout=30)
+    if r.status_code == 400:  # formattazione rifiutata -> ripiego su testo semplice
+        r = requests.post(TG_URL, json={**base, "text": chunk}, timeout=30)
+    if not r.ok:  # fa fallire il workflow invece di "passare" senza inviare nulla
+        sys.exit(f"Invio Telegram fallito ({r.status_code}): {r.text}")
+
+
+for chunk in split_text(article_text):
+    send_chunk(chunk)
+    time.sleep(1)  # evita il flood limit di Telegram
