@@ -60,9 +60,9 @@ FEEDS = {
         "https://kotaku.com/rss",
     ],
 }
-# Report alle 06:00 (copre la notte, 6 ore) e alle 00:00 (copre la giornata, 18 ore), ora italiana
+# Report alle 06:00 (copre la notte, 10 ore) e alle 20:00 (copre la giornata, 14 ore), ora italiana
 ora_it = datetime.now(ZoneInfo("Europe/Rome")).hour
-ORE = 6 if 3 <= ora_it < 12 else 18
+ORE = 10 if 3 <= ora_it < 12 else 14
 MAX_PER_FEED = 8     # voci massime per feed
 MAX_REDDIT = 15      # voci massime per feed Reddit
 PAUSA_REDDIT = 5     # secondi tra due richieste a Reddit
