@@ -6,6 +6,7 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 import requests
 from google import genai
@@ -45,10 +46,8 @@ FEEDS = {
     "Italia": [
         "https://www.spaziogames.it/feed",
         "https://it.ign.com/feed.xml",
-        "https://www.eurogamer.it/feed",
         "https://www.gamesource.it/feed/",
         "https://www.player.it/feed",
-        "https://www.nintendoon.it/feed/",
     ],
     "Estero": [
         "https://feeds.feedburner.com/ign/news",
@@ -61,7 +60,9 @@ FEEDS = {
         "https://kotaku.com/rss",
     ],
 }
-ORE = 24             # finestra temporale delle notizie
+# Report alle 06:00 (copre la notte, 6 ore) e alle 00:00 (copre la giornata, 18 ore), ora italiana
+ora_it = datetime.now(ZoneInfo("Europe/Rome")).hour
+ORE = 6 if 3 <= ora_it < 12 else 18
 MAX_PER_FEED = 8     # voci massime per feed
 MAX_REDDIT = 15      # voci massime per feed Reddit
 PAUSA_REDDIT = 5     # secondi tra due richieste a Reddit
