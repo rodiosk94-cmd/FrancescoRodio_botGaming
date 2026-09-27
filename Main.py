@@ -1,7 +1,15 @@
+import html
 import os
+import re
+import sys
+import time
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+
 import requests
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 # 1. Inizializzazione Client Gemini
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -26,30 +34,21 @@ Sei un agente specializzato in Gaming Intelligence, Giornalismo d'Inchiesta e Fa
 - TONO RIGOROSO: Mantieni uno stile giornalistico professionale, oggettivo, preciso e privo di formule di cortesia o elementi promozionali/clickbait.
 """
 
-import html as _html
-import re as _re
-import sys
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
-
+# 2. Raccolta notizie da feed RSS/Atom
 FEEDS = {
     "Reddit": [
         "https://www.reddit.com/r/Games/top/.rss?t=day",
-        "https://www.reddit.com/r/gaming/top/.rss?t=day",
-        "https://www.reddit.com/r/pcgaming/top/.rss?t=day",
-        "https://www.reddit.com/r/PS5/top/.rss?t=day",
-        "https://www.reddit.com/r/NintendoSwitch/top/.rss?t=day",
-        "https://www.reddit.com/r/XboxSeriesX/top/.rss?t=day",
-        "https://www.reddit.com/r/videogiochi/top/.rss?t=day",
+        # più subreddit in UNA sola richiesta: evita il 429 di Reddit
+        "https://www.reddit.com/r/gaming+pcgaming+PS5+NintendoSwitch+XboxSeriesX+videogiochi"
+        "+GamingLeaksAndRumours/top/.rss?t=day&limit=25",
     ],
     "Italia": [
-        "https://multiplayer.it/feed/rss/",
-        "https://www.everyeye.it/feed_news_rss.asp",
         "https://www.spaziogames.it/feed",
-        "https://www.eurogamer.it/feed",
         "https://it.ign.com/feed.xml",
-        "https://www.gamesvillage.it/feed/",
+        "https://www.eurogamer.it/feed",
+        "https://www.gamesource.it/feed/",
+        "https://www.player.it/feed",
+        "https://www.nintendoon.it/feed/",
     ],
     "Estero": [
         "https://feeds.feedburner.com/ign/news",
@@ -62,9 +61,12 @@ FEEDS = {
         "https://kotaku.com/rss",
     ],
 }
-ORE = 24            # finestra temporale delle notizie
-MAX_PER_FEED = 8    # voci massime per singolo feed
+ORE = 24             # finestra temporale delle notizie
+MAX_PER_FEED = 8     # voci massime per feed
+MAX_REDDIT = 15      # voci massime per feed Reddit
+PAUSA_REDDIT = 5     # secondi tra due richieste a Reddit
 UA = {"User-Agent": "Mozilla/5.0 (compatible; GamingNewsBot/1.0; +https://github.com/rodiosk94-cmd)"}
+MODELLI = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]  # gratuiti sul free tier
 
 
 def _local(tag):
@@ -91,15 +93,25 @@ def _data(s):
 
 
 def _pulisci(s, n=300):
-    s = _re.sub(r"<[^>]+>", " ", _html.unescape(s or ""))
+    s = re.sub(r"<[^>]+>", " ", html.unescape(s or ""))
     s = " ".join(s.split())
     return s[:n] + ("…" if len(s) > n else "")
 
 
-def leggi_feed(url):
+def _parse_xml(raw):
+    try:
+        return ET.fromstring(raw)
+    except ET.ParseError:  # feed malformato: ripulisco caratteri di controllo e "&" non escapati
+        t = raw.decode("utf-8", "replace")
+        t = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", t)
+        t = re.sub(r"&(?!#?\w+;)", "&amp;", t)
+        return ET.fromstring(t.encode("utf-8"))
+
+
+def leggi_feed(url, massimo):
     r = requests.get(url, headers=UA, timeout=20)
     r.raise_for_status()
-    root = ET.fromstring(r.content)
+    root = _parse_xml(r.content)
     limite = datetime.now(timezone.utc) - timedelta(hours=ORE)
     voci = []
     for it in (e for e in root.iter() if _local(e.tag) in ("item", "entry")):
@@ -116,17 +128,20 @@ def leggi_feed(url):
             "data": d.strftime("%d/%m %H:%M UTC") if d else "n.d.",
             "testo": _pulisci(desc.text if desc is not None else ""),
         })
-        if len(voci) >= MAX_PER_FEED:
+        if len(voci) >= massimo:
             break
     return voci
 
 
 blocchi = []
 for area, urls in FEEDS.items():
-    for url in urls:
+    for i, url in enumerate(urls):
+        is_reddit = "reddit.com" in url
+        if is_reddit and i > 0:
+            time.sleep(PAUSA_REDDIT)
         try:
-            voci = leggi_feed(url)
-        except Exception as e:  # un feed rotto non deve bloccare gli altri
+            voci = leggi_feed(url, MAX_REDDIT if is_reddit else MAX_PER_FEED)
+        except Exception as e:  # un feed rotto non blocca gli altri
             print(f"[KO] {url}: {e}")
             continue
         print(f"[OK] {url}: {len(voci)} voci")
@@ -141,27 +156,39 @@ prompt = (
     "Scrivi il report usando SOLO queste fonti: non aggiungere fatti, date o link che non compaiono qui. "
     "Nella sitografia usa esattamente i link indicati alla voce 'Fonte'. "
     "Incrocia le voci [Italia] ed [Estero] per il fact-checking; usa le voci [Reddit] "
-    "per la sezione sulle reazioni della community.\n\n"
+    "per la sezione sulle reazioni della community e per i RUMOR/LEAK.\n\n"
     + "\n\n---\n\n".join(blocchi)
 )
 
-response = client.models.generate_content(
-    model="gemini-3.8-flash",
-    contents=prompt,
-    config=types.GenerateContentConfig(system_instruction=system_instruction),
-)
+# 3. Chiamata a Gemini con retry e modelli di riserva (503 = sovraccarico temporaneo)
+response = None
+for modello in MODELLI:
+    for tentativo in range(3):
+        try:
+            response = client.models.generate_content(
+                model=modello,
+                contents=prompt,
+                config=types.GenerateContentConfig(system_instruction=system_instruction),
+            )
+            print(f"Report generato con {modello}")
+            break
+        except errors.APIError as e:
+            if e.code not in (429, 500, 503):  # errori non temporanei: stop subito
+                raise
+            attesa = 30 * (tentativo + 1)
+            print(f"[{modello}] errore {e.code}, nuovo tentativo tra {attesa}s")
+            time.sleep(attesa)
+    if response is not None:
+        break
 
-
-import html
-import re
-import sys
-import time
+if response is None:
+    sys.exit("Tutti i modelli sono sovraccarichi: riprova più tardi.")
 
 article_text = response.text
 if not article_text:
     sys.exit("Gemini ha restituito una risposta vuota: niente da inviare.")
 
-# 3. Invio a Telegram
+# 4. Invio a Telegram
 bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
 chat_id = os.environ["TELEGRAM_CHAT_ID"]
 TG_URL = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -179,10 +206,10 @@ def md_to_html(md: str) -> str:
 
 
 def split_text(text: str, limit: int = LIMIT) -> list[str]:
-    """Divide sui fine riga, mai a meta' parola o a meta' formattazione."""
+    """Divide sui fine riga, mai a metà parola o a metà formattazione."""
     chunks, cur = [], ""
     for line in text.splitlines(keepends=True):
-        while len(line) > limit:  # singola riga piu' lunga del limite
+        while len(line) > limit:  # singola riga più lunga del limite
             if cur.strip():
                 chunks.append(cur)
             cur = ""
