@@ -28,7 +28,7 @@ Sei un agente specializzato in Gaming Intelligence, Giornalismo d'Inchiesta e Fa
 
 # 2. Chiamata a Gemini con Grounding Google Search
 response = client.models.generate_content(
-   model="gemini-2.5-flash ,
+   model="gemini-2.5-flash" ,
     contents="Esegui il monitoraggio e la redazione degli articoli di approfondimento sulle ultime notizie dal mondo dei videogiochi (PlayStation, Xbox, Nintendo, PC, sviluppatori) e relative reazioni della community delle ultime 12 ore.",
     config=types.GenerateContentConfig(
         system_instruction=system_instruction,
