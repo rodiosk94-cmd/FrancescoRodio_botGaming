@@ -67,7 +67,16 @@ MAX_PER_FEED = 8     # voci massime per feed
 MAX_REDDIT = 15      # voci massime per feed Reddit
 PAUSA_REDDIT = 5     # secondi tra due richieste a Reddit
 UA = {"User-Agent": "Mozilla/5.0 (compatible; GamingNewsBot/1.0; +https://github.com/rodiosk94-cmd)"}
-MODELLI = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]  # gratuiti sul free tier
+MODELLI = [  # in ordine di preferenza; le versioni Lite hanno una capacità separata e sono meno sature
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+]
+GIRI = 2            # quante volte scorrere tutta la lista prima di arrendersi
+PAUSA_GIRO = 60     # secondi di attesa tra un giro e l'altro
 
 
 def _local(tag):
@@ -135,6 +144,7 @@ def leggi_feed(url, massimo):
 
 
 blocchi = []
+titoli = []  # (area, titolo, link) per il riepilogo di emergenza
 for area, urls in FEEDS.items():
     for i, url in enumerate(urls):
         is_reddit = "reddit.com" in url
@@ -147,6 +157,7 @@ for area, urls in FEEDS.items():
             continue
         print(f"[OK] {url}: {len(voci)} voci")
         for v in voci:
+            titoli.append((area, v['titolo'], v['link']))
             blocchi.append(f"[{area}] {v['titolo']}\nFonte: {v['link']}\nData: {v['data']}\n{v['testo']}")
 
 if not blocchi:
@@ -161,33 +172,45 @@ prompt = (
     + "\n\n---\n\n".join(blocchi)
 )
 
-# 3. Chiamata a Gemini con retry e modelli di riserva (503 = sovraccarico temporaneo)
+# 3. Chiamata a Gemini: scorre i modelli a giri (503 = sovraccarico temporaneo)
 response = None
-for modello in MODELLI:
-    for tentativo in range(3):
+for giro in range(GIRI):
+    for modello in MODELLI:
         try:
             response = client.models.generate_content(
                 model=modello,
                 contents=prompt,
                 config=types.GenerateContentConfig(system_instruction=system_instruction),
             )
+        except errors.APIError as e:
+            if e.code not in (404, 429, 500, 503):  # errori di configurazione: stop subito
+                raise
+            print(f"[{modello}] errore {e.code}, provo il modello successivo")
+            continue
+        if response.text:
             print(f"Report generato con {modello}")
             break
-        except errors.APIError as e:
-            if e.code not in (429, 500, 503):  # errori non temporanei: stop subito
-                raise
-            attesa = 30 * (tentativo + 1)
-            print(f"[{modello}] errore {e.code}, nuovo tentativo tra {attesa}s")
-            time.sleep(attesa)
+        print(f"[{modello}] risposta vuota, provo il modello successivo")
+        response = None
     if response is not None:
         break
+    if giro < GIRI - 1:
+        print(f"Nessun modello disponibile, nuovo giro tra {PAUSA_GIRO}s")
+        time.sleep(PAUSA_GIRO)
 
-if response is None:
-    sys.exit("Tutti i modelli sono sovraccarichi: riprova più tardi.")
-
-article_text = response.text
-if not article_text:
-    sys.exit("Gemini ha restituito una risposta vuota: niente da inviare.")
+if response is not None:
+    article_text = response.text
+else:
+    # Gemini irraggiungibile: invio comunque i titoli raccolti, senza report
+    print("Gemini non disponibile: invio il riepilogo dei titoli.")
+    righe = ["**RIEPILOGO TITOLI (Gemini non disponibile, report non generato)**", ""]
+    area_corrente = None
+    for area, titolo, link in titoli:
+        if area != area_corrente:
+            righe += ["", f"**{area}**"]
+            area_corrente = area
+        righe.append(f"• {titolo}\n{link}")
+    article_text = "\n".join(righe)
 
 # 4. Invio a Telegram
 bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
