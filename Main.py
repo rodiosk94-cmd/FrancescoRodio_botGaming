@@ -4,8 +4,10 @@ import re
 import sys
 import time
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
 from zoneinfo import ZoneInfo
 
 import requests
@@ -43,6 +45,10 @@ FEEDS = {
         "https://www.reddit.com/r/gaming+pcgaming+PS5+NintendoSwitch+XboxSeriesX+videogiochi"
         "+GamingLeaksAndRumours/top/.rss?t=day&limit=25",
     ],
+    "Ufficiali": [  # comunicati di Sony e Microsoft: fonti primarie
+        "https://blog.playstation.com/feed/",
+        "https://news.xbox.com/en-us/feed/",
+    ],
     "Italia": [
         "https://www.spaziogames.it/feed",
         "https://it.ign.com/feed.xml",
@@ -65,6 +71,8 @@ ora_it = datetime.now(ZoneInfo("Europe/Rome")).hour
 ORE = 10 if 3 <= ora_it < 12 else 14
 MAX_PER_FEED = 8     # voci massime per feed
 MAX_REDDIT = 15      # voci massime per feed Reddit
+MAX_ARTICOLI = 25    # articoli da aprire per cercare dichiarazioni
+MAX_CIT = 3          # paragrafi con dichiarazioni per articolo
 PAUSA_REDDIT = 5     # secondi tra due richieste a Reddit
 UA = {"User-Agent": "Mozilla/5.0 (compatible; GamingNewsBot/1.0; +https://github.com/rodiosk94-cmd)"}
 MODELLI = [  # in ordine di preferenza; le versioni Lite hanno una capacità separata e sono meno sature
@@ -143,8 +151,57 @@ def leggi_feed(url, massimo):
     return voci
 
 
-blocchi = []
-titoli = []  # (area, titolo, link) per il riepilogo di emergenza
+class _Paragrafi(HTMLParser):
+    """Estrae il testo dei paragrafi <p> di una pagina, ignorando script e stili."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.paragrafi, self._buf, self._in_p, self._skip = [], [], 0, 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style", "noscript"):
+            self._skip += 1
+        elif tag == "p":
+            self._in_p += 1
+            self._buf = []
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "noscript") and self._skip:
+            self._skip -= 1
+        elif tag == "p" and self._in_p:
+            self._in_p -= 1
+            testo = " ".join("".join(self._buf).split())
+            if testo:
+                self.paragrafi.append(testo)
+
+    def handle_data(self, data):
+        if self._in_p and not self._skip:
+            self._buf.append(data)
+
+
+# frase tra virgolette di almeno ~40 caratteri: una dichiarazione, non un titolo o un nome
+_CITAZIONE = re.compile(r'[“«"]([^”»"]{40,600})[”»"]')
+
+
+def estrai_citazioni(url):
+    try:
+        r = requests.get(url, headers=UA, timeout=15)
+        r.raise_for_status()
+        parser = _Paragrafi()
+        parser.feed(r.content.decode("utf-8", "replace"))
+    except Exception as e:  # sito bloccato o lento: l'articolo resta senza citazioni
+        print(f"[citazioni KO] {url}: {e}")
+        return []
+    trovate = []
+    for par in parser.paragrafi:
+        if _CITAZIONE.search(par):
+            trovate.append(par[:500] + ("…" if len(par) > 500 else ""))
+            if len(trovate) >= MAX_CIT:
+                break
+    return trovate
+
+
+raccolte = []  # (area, voce)
 for area, urls in FEEDS.items():
     for i, url in enumerate(urls):
         is_reddit = "reddit.com" in url
@@ -156,9 +213,23 @@ for area, urls in FEEDS.items():
             print(f"[KO] {url}: {e}")
             continue
         print(f"[OK] {url}: {len(voci)} voci")
-        for v in voci:
-            titoli.append((area, v['titolo'], v['link']))
-            blocchi.append(f"[{area}] {v['titolo']}\nFonte: {v['link']}\nData: {v['data']}\n{v['testo']}")
+        raccolte.extend((area, v) for v in voci)
+
+# 2b. Dichiarazioni: apre gli articoli (in parallelo) e ne estrae i paragrafi con citazioni dirette
+da_aprire = [v for area, v in raccolte if area != "Reddit" and v["link"].startswith("http")][:MAX_ARTICOLI]
+with ThreadPoolExecutor(max_workers=8) as pool:
+    for v, cit in zip(da_aprire, pool.map(estrai_citazioni, [v["link"] for v in da_aprire])):
+        v["citazioni"] = cit
+print(f"Dichiarazioni trovate in {sum(1 for v in da_aprire if v.get('citazioni'))}/{len(da_aprire)} articoli")
+
+blocchi = []
+titoli = []  # (area, titolo, link) per il riepilogo di emergenza
+for area, v in raccolte:
+    titoli.append((area, v["titolo"], v["link"]))
+    blocco = f"[{area}] {v['titolo']}\nFonte: {v['link']}\nData: {v['data']}\n{v['testo']}"
+    if v.get("citazioni"):
+        blocco += "\nCitazioni dall'articolo:\n" + "\n".join(f"> {c}" for c in v["citazioni"])
+    blocchi.append(blocco)
 
 if not blocchi:
     sys.exit("Nessuna notizia raccolta dai feed: controlla le righe [KO] nel log.")
@@ -168,7 +239,15 @@ prompt = (
     "Scrivi il report usando SOLO queste fonti: non aggiungere fatti, date o link che non compaiono qui. "
     "Nella sitografia usa esattamente i link indicati alla voce 'Fonte'. "
     "Incrocia le voci [Italia] ed [Estero] per il fact-checking; usa le voci [Reddit] "
-    "per la sezione sulle reazioni della community e per i RUMOR/LEAK.\n\n"
+    "per la sezione sulle reazioni della community e per i RUMOR/LEAK. "
+    "Le voci [Ufficiali] sono comunicati ufficiali: trattale come fonte primaria.\n"
+    "DICHIARAZIONI: le righe 'Citazioni dall'articolo' sono paragrafi originali che contengono "
+    "dichiarazioni dirette. Nella trattazione di ogni notizia riporta tra virgolette le dichiarazioni "
+    "rilevanti di sviluppatori, director, publisher o dirigenti, indicando chi parla e il suo ruolo "
+    "SOLO se risultano dal testo. Usa esclusivamente frasi presenti in quelle righe: non inventare, "
+    "non completare e non attribuire frasi a persone diverse. Citazioni brevi (massimo 2-3 frasi); "
+    "se sono in inglese traducile in italiano indicando '(trad.)'. Se una notizia non ha citazioni, "
+    "non aggiungerne.\n\n"
     + "\n\n---\n\n".join(blocchi)
 )
 
