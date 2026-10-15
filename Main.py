@@ -14,8 +14,8 @@ import requests
 from google import genai
 from google.genai import errors, types
 
-# 1. Inizializzazione Client Gemini
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+# Modalità test: SOLO_FEED=1 raccoglie le fonti e stampa le statistiche, senza Gemini né Telegram
+SOLO_FEED = os.environ.get("SOLO_FEED") == "1"
 
 system_instruction = """
 Sei un agente specializzato in Gaming Intelligence, Giornalismo d'Inchiesta e Fact-Checking. Il tuo compito è monitorare, verificare e redigere articoli e report estremamente approfonditi, completi ed esaustivi sul mondo dei videogiochi (PlayStation, Xbox, Nintendo, PC, hardware, software, case di sviluppo e dinamiche di mercato).
@@ -39,41 +39,77 @@ Sei un agente specializzato in Gaming Intelligence, Giornalismo d'Inchiesta e Fa
 
 # 2. Raccolta notizie da feed RSS/Atom
 FEEDS = {
-    "Reddit": [
-        "https://www.reddit.com/r/Games/top/.rss?t=day",
-        # più subreddit in UNA sola richiesta: evita il 429 di Reddit
-        "https://www.reddit.com/r/gaming+pcgaming+PS5+NintendoSwitch+XboxSeriesX+videogiochi"
-        "+GamingLeaksAndRumours/top/.rss?t=day&limit=25",
+    # Reddit + ResetEra: reazioni dei giocatori e rumor/leak. Letti in sequenza (Reddit dà 429 a raffica)
+    "Community": [
+        # tutti i subreddit in UNA sola richiesta: dai server di GitHub la seconda prende sempre 429.
+        # Niente r/gaming: è quasi solo meme e, avendo più voti, oscurerebbe gli altri subreddit
+        "https://www.reddit.com/r/Games+GamingLeaksAndRumours+pcgaming+PS5+NintendoSwitch+XboxSeriesX"
+        "+videogiochi/top/.rss?t=day&limit=25",
+        "https://www.resetera.com/forums/video-games.7/index.rss",
     ],
-    "Ufficiali": [  # comunicati di Sony e Microsoft: fonti primarie
+    "Ufficiali": [  # comunicati di piattaforme e store: fonti primarie
         "https://blog.playstation.com/feed/",
         "https://news.xbox.com/en-us/feed/",
+        "https://store.steampowered.com/feeds/news/app/593110/",  # Steam News di Valve
     ],
     "Italia": [
+        "https://www.everyeye.it/feed/feed_news_rss.asp",
+        "https://multiplayer.it/feed/rss/news/",
         "https://www.spaziogames.it/feed",
         "https://it.ign.com/feed.xml",
         "https://www.gamesource.it/feed/",
-        "https://www.player.it/feed",
+        "https://www.console-tribe.com/feed/",
+        "https://www.nintendon.it/feed/",
+        "https://www.akibagamers.it/feed/",
+        "https://www.gamerbrain.net/feed/",
     ],
     "Estero": [
         "https://feeds.feedburner.com/ign/news",
         "https://www.gamespot.com/feeds/news/",
         "https://www.eurogamer.net/feed/news",
-        "https://www.pcgamer.com/rss/",
-        "https://www.polygon.com/rss/index.xml",
         "https://www.videogameschronicle.com/feed/",
-        "https://www.rockpapershotgun.com/feed/news",
+        "https://www.polygon.com/rss/index.xml",
         "https://kotaku.com/rss",
+        "https://www.gamesradar.com/rss/",
+        "https://www.gameinformer.com/news.xml",
+        "https://www.theverge.com/rss/games/index.xml",
+        "https://www.destructoid.com/feed/",
+        "https://www.gamingbolt.com/feed",
+        "https://insider-gaming.com/feed/",       # spesso prima fonte di leak e notizie interne
+        "https://wccftech.com/topic/games/feed/",  # rumor tecnici e hardware
+        "https://www.digitalfoundry.net/feed",     # analisi tecniche
+    ],
+    "Piattaforme": [  # testate dedicate a una singola piattaforma
+        "https://www.pushsquare.com/feeds/latest",   # PlayStation
+        "https://www.purexbox.com/feeds/latest",     # Xbox
+        "https://www.nintendolife.com/feeds/latest", # Nintendo
+        "https://www.pcgamer.com/rss/",              # PC
+        "https://www.rockpapershotgun.com/feed/news",
+    ],
+    "Giappone": [  # mercato giapponese e publisher asiatici
+        "https://www.gematsu.com/feed",
+        "https://www.siliconera.com/feed/",
+        "https://automaton-media.com/en/feed/",
+    ],
+    "Industria": [  # mercato, licenziamenti, acquisizioni, dati di vendita
+        "https://www.gamesindustry.biz/feed",
+        "https://www.gamedeveloper.com/rss.xml",
     ],
 }
 # Report alle 06:00 (copre la notte, 10 ore) e alle 20:00 (copre la giornata, 14 ore), ora italiana
 ora_it = datetime.now(ZoneInfo("Europe/Rome")).hour
 ORE = 10 if 3 <= ora_it < 12 else 14
-MAX_PER_FEED = 8     # voci massime per feed
-MAX_REDDIT = 15      # voci massime per feed Reddit
-MAX_ARTICOLI = 25    # articoli da aprire per cercare dichiarazioni
+MAX_PER_FEED = 6     # voci massime per feed
+MAX_COMMUNITY = 20   # voci massime per feed Reddit/ResetEra
+MAX_ARTICOLI = 40    # articoli da aprire per cercare dichiarazioni (scelti a turno tra le testate)
 MAX_CIT = 3          # paragrafi con dichiarazioni per articolo
-PAUSA_REDDIT = 5     # secondi tra due richieste a Reddit
+PAUSA_REDDIT = 8     # secondi tra due richieste a Reddit
+NO_CITAZIONI = ("reddit.com", "resetera.com", "gamespot.com")  # pagine che bloccano il bot
+# titoli che non sono notizie: soluzioni di puzzle, offerte, guide
+_NON_NOTIZIA = re.compile(
+    r"\b(wordle|nyt connections|connections hint|strands hint|quordle|best .{0,40} deals|deal alert|"
+    r"codes|codici|walkthrough|how to|guide|tier list|guida (completa|a|per|ai|alle)|come sbloccare|"
+    r"come ottenere|dove trovare|in offerta|in sconto|offerta amazon|offerte)\b", re.I)
 UA = {"User-Agent": "Mozilla/5.0 (compatible; GamingNewsBot/1.0; +https://github.com/rodiosk94-cmd)"}
 MODELLI = [  # in ordine di preferenza; le versioni Lite hanno una capacità separata e sono meno sature
     "gemini-3.8-flash",
@@ -126,11 +162,21 @@ def _parse_xml(raw):
         return ET.fromstring(t.encode("utf-8"))
 
 
-def leggi_feed(url, massimo):
+def _scarica(url):
     r = requests.get(url, headers=UA, timeout=20)
+    if r.status_code == 429:  # Reddit: attendo quanto chiesto (max 60s) e riprovo una volta
+        attesa = min(int(r.headers.get("Retry-After", "30") or 30), 60)
+        print(f"[429] {url}: riprovo tra {attesa}s")
+        time.sleep(attesa)
+        r = requests.get(url, headers=UA, timeout=20)
     r.raise_for_status()
-    root = _parse_xml(r.content)
-    limite = datetime.now(timezone.utc) - timedelta(hours=ORE)
+    return r.content
+
+
+def leggi_feed(url, massimo):
+    root = _parse_xml(_scarica(url))
+    adesso = datetime.now(timezone.utc)
+    limite = adesso - timedelta(hours=ORE)
     voci = []
     for it in (e for e in root.iter() if _local(e.tag) in ("item", "entry")):
         titolo = _child(it, "title")
@@ -138,10 +184,13 @@ def leggi_feed(url, massimo):
         data = _child(it, "pubDate", "published", "updated", "date")
         desc = _child(it, "description", "summary", "encoded", "content")
         d = _data(data.text) if data is not None and data.text else None
-        if d and d < limite:
+        if d and (d < limite or d > adesso + timedelta(hours=1)):  # vecchia o con data futura errata
+            continue
+        t = _pulisci(titolo.text if titolo is not None else "", 200)
+        if not t or _NON_NOTIZIA.search(t):
             continue
         voci.append({
-            "titolo": _pulisci(titolo.text if titolo is not None else "", 200),
+            "titolo": t,
             "link": ((link.get("href") or link.text or "").strip() if link is not None else ""),
             "data": d.strftime("%d/%m %H:%M UTC") if d else "n.d.",
             "testo": _pulisci(desc.text if desc is not None else ""),
@@ -201,23 +250,55 @@ def estrai_citazioni(url):
     return trovate
 
 
-raccolte = []  # (area, voce)
-for area, urls in FEEDS.items():
-    for i, url in enumerate(urls):
-        is_reddit = "reddit.com" in url
-        if is_reddit and i > 0:
-            time.sleep(PAUSA_REDDIT)
-        try:
-            voci = leggi_feed(url, MAX_REDDIT if is_reddit else MAX_PER_FEED)
-        except Exception as e:  # un feed rotto non blocca gli altri
-            print(f"[KO] {url}: {e}")
-            continue
-        print(f"[OK] {url}: {len(voci)} voci")
-        raccolte.extend((area, v) for v in voci)
+def leggi_sicuro(url, massimo):
+    try:
+        voci = leggi_feed(url, massimo)
+    except Exception as e:  # un feed rotto non blocca gli altri
+        print(f"[KO] {url}: {e}")
+        return None
+    print(f"[OK] {url}: {len(voci)} voci")
+    return voci
 
-# 2b. Dichiarazioni: apre gli articoli (in parallelo) e ne estrae i paragrafi con citazioni dirette
-da_aprire = [v for area, v in raccolte if area != "Reddit" and v["link"].startswith("http")][:MAX_ARTICOLI]
-with ThreadPoolExecutor(max_workers=8) as pool:
+
+# Testate in parallelo; Reddit e ResetEra in sequenza, con pausa tra le richieste a Reddit
+lavori = [(area, url) for area, urls in FEEDS.items() if area != "Community" for url in urls]
+with ThreadPoolExecutor(max_workers=10) as pool:
+    esiti = list(pool.map(lambda au: leggi_sicuro(au[1], MAX_PER_FEED), lavori))
+reddit_letti = 0
+for url in FEEDS["Community"]:
+    if "reddit.com" in url:
+        if reddit_letti:
+            time.sleep(PAUSA_REDDIT)
+        reddit_letti += 1
+    lavori.append(("Community", url))
+    esiti.append(leggi_sicuro(url, MAX_COMMUNITY))
+
+raccolte = []  # (area, voce)
+visti = set()   # stesso articolo in più feed (link o titolo identici): lo tengo una volta sola
+for (area, url), voci in zip(lavori, esiti):
+    for v in voci or []:
+        chiavi = {v["link"].split("?")[0].split("#")[0].rstrip("/").lower(), v["titolo"].lower()}
+        if chiavi & visti:
+            continue
+        visti |= chiavi
+        v["feed"] = url
+        raccolte.append((area, v))
+ko = sum(1 for e in esiti if e is None)
+print(f"Feed letti: {len(esiti) - ko}/{len(esiti)} — voci raccolte: {len(raccolte)}")
+
+# 2b. Dichiarazioni: apre gli articoli (in parallelo) e ne estrae i paragrafi con citazioni dirette.
+# Gli articoli si scelgono a turno tra le testate, così nessun sito monopolizza il limite.
+per_feed = {}
+for area, v in raccolte:
+    if v["link"].startswith("http") and not any(d in v["link"] for d in NO_CITAZIONI):
+        per_feed.setdefault(v["feed"], []).append(v)
+da_aprire, code = [], list(per_feed.values())
+while code and len(da_aprire) < MAX_ARTICOLI:
+    for coda in code:
+        if coda and len(da_aprire) < MAX_ARTICOLI:
+            da_aprire.append(coda.pop(0))
+    code = [c for c in code if c]
+with ThreadPoolExecutor(max_workers=10) as pool:
     for v, cit in zip(da_aprire, pool.map(estrai_citazioni, [v["link"] for v in da_aprire])):
         v["citazioni"] = cit
 print(f"Dichiarazioni trovate in {sum(1 for v in da_aprire if v.get('citazioni'))}/{len(da_aprire)} articoli")
@@ -237,10 +318,15 @@ if not blocchi:
 prompt = (
     f"Qui sotto trovi notizie e discussioni delle ultime {ORE} ore raccolte da feed RSS. "
     "Scrivi il report usando SOLO queste fonti: non aggiungere fatti, date o link che non compaiono qui. "
-    "Nella sitografia usa esattamente i link indicati alla voce 'Fonte'. "
-    "Incrocia le voci [Italia] ed [Estero] per il fact-checking; usa le voci [Reddit] "
-    "per la sezione sulle reazioni della community e per i RUMOR/LEAK. "
-    "Le voci [Ufficiali] sono comunicati ufficiali: trattale come fonte primaria.\n"
+    "Nella sitografia usa esattamente i link indicati alla voce 'Fonte'.\n"
+    "FONTI: [Ufficiali] sono comunicati di piattaforme e store: trattale come fonte primaria. "
+    "[Italia], [Estero], [Piattaforme] e [Giappone] sono testate giornalistiche: incrociale per il "
+    "fact-checking. [Industria] riguarda mercato, vendite, acquisizioni e licenziamenti. "
+    "[Community] sono discussioni di Reddit e ResetEra: usale per le reazioni dei giocatori e per i "
+    "RUMOR/LEAK, mai come conferma di un fatto.\n"
+    "SELEZIONE: molte voci parlano dello stesso fatto da testate diverse: raggruppale in un'unica "
+    "notizia e cita tutte le fonti che la riportano. Dai la precedenza alle notizie confermate da più "
+    "fonti o da fonti ufficiali; tralascia recensioni di prodotti, guide, offerte e contenuti promozionali.\n"
     "DICHIARAZIONI: le righe 'Citazioni dall'articolo' sono paragrafi originali che contengono "
     "dichiarazioni dirette. Nella trattazione di ogni notizia riporta tra virgolette le dichiarazioni "
     "rilevanti di sviluppatori, director, publisher o dirigenti, indicando chi parla e il suo ruolo "
@@ -251,7 +337,23 @@ prompt = (
     + "\n\n---\n\n".join(blocchi)
 )
 
+if SOLO_FEED:
+    conteggio = {}
+    for area, _ in raccolte:
+        conteggio[area] = conteggio.get(area, 0) + 1
+    print("Voci per area:", conteggio)
+    print(f"Prompt: {len(prompt)} caratteri")
+    if os.environ.get("GEMINI_API_KEY"):  # conteggio esatto dei token, se la chiave è disponibile
+        try:
+            client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+            n = client.models.count_tokens(model=MODELLI[0], contents=system_instruction + prompt).total_tokens
+            print(f"Token in ingresso: {n}")
+        except Exception as e:
+            print(f"Conteggio token non riuscito: {e}")
+    sys.exit(0)
+
 # 3. Chiamata a Gemini: scorre i modelli a giri (503 = sovraccarico temporaneo)
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 response = None
 for giro in range(GIRI):
     for modello in MODELLI:
