@@ -52,9 +52,14 @@ _UFFICIALI = re.compile(
     r")", re.I)
 _BSKY_POST = re.compile(r"https?://(?:www\.)?bsky\.app/profile/([^/\s]+)/post/", re.I)
 _X_POST = re.compile(r"https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/(\w+)/status/", re.I)
-# domini che non sono una fonte: immagini, accorciatori, il forum stesso
+# domini che non sono una fonte: immagini, accorciatori, il forum stesso, negozi, wiki e mod
+# (i comunicati ufficiali sugli stessi domini, es. Steam News, sono riconosciuti prima da _UFFICIALI)
 _NON_FONTE = ("reddit.com", "redd.it", "redditmedia.com", "resetera.com", "imgur.com",
-              "youtube.com", "youtu.be", "discord.gg", "patreon.com", "amazon.", "bit.ly")
+              "youtube.com", "youtu.be", "discord.gg", "patreon.com", "amazon.", "bit.ly",
+              "steampowered.com", "steamcommunity.com", "gog.com", "epicgames.com", "playstation.com",
+              "xbox.com", "nintendo.", "humblebundle.com", "moddb.com", "nexusmods.com", "wikipedia.org",
+              "fandom.com", "metacritic.com", "opencritic.com", "howlongtobeat.com", "twitch.tv",
+              "instagram.com", "tiktok.com", "facebook.com", "linkedin.com", "t.co", "giphy.com")
 COMMUNITY = ("reddit.com", "resetera.com")
 
 # Indizi che una notizia è un leak/rumor e non un fatto annunciato
@@ -98,7 +103,8 @@ def classifica_url(url):
         h = m.group(1).lower()
         return ("insider", _HANDLE_X.get(h, "@" + h))
     d = dominio(url)
-    if not d or any(x in d for x in _NON_FONTE):
+    # dominio esatto o sottodominio ("t.co" non deve colpire "mp1st.com"); "amazon." vale per ogni paese
+    if not d or any(d == x or d.endswith("." + x) or (x.endswith(".") and x in d) for x in _NON_FONTE):
         return None
     if d in _DOMINIO_INSIDER:
         return ("insider", _DOMINIO_INSIDER[d])
@@ -301,6 +307,17 @@ SOLO_COMMUNITY = "💬 COMMUNITY"
 ORDINE = [UFFICIALE, AFFIDABILE, CONFERMATA, RUMOR, FONTE_UNICA, SOLO_COMMUNITY]
 
 
+def chiave_origine(v):
+    """Da dove viene la voce: l'insider citato, altrimenti il primo sito citato, altrimenti la voce stessa."""
+    for o in v.get("origini", []):
+        if o["tipo"] == "insider":
+            return o["chiave"]
+    for o in v.get("origini", []):
+        if o["tipo"] == "testata":
+            return o["chiave"]
+    return v.get("autore") or dominio(v["link"])
+
+
 def valuta_gruppo(gruppo, stato):
     """Etichetta di un gruppo di voci sulla stessa notizia.
 
@@ -314,12 +331,21 @@ def valuta_gruppo(gruppo, stato):
     leak = any(v.get("leak") for v in gruppo)
     ufficiale = any(v["area"] == "Ufficiali" for v in gruppo) or any(t == "ufficiale" for t, _ in origini)
 
-    # fonti indipendenti: ogni origine conta una volta; le testate senza origine contano per dominio.
+    # Fonti indipendenti: ogni voce conta per la SUA origine, risalendo la catena
+    # (Multiplayer cita PC Gamer che cita il sito della band → una fonte sola).
     # Dieci siti che riprendono lo stesso tweet sono UNA fonte.
-    indip = {k for t, k in origini if t in ("insider", "testata")}
-    for v in gruppo:
-        if not v.get("origini") and v["area"] not in ("Community",):
-            indip.add(v.get("autore") or dominio(v["link"]))
+    origine_di = {dominio(v["link"]): chiave_origine(v) for v in gruppo}
+
+    def risali(k):
+        for _ in range(5):
+            nxt = origine_di.get(k)
+            if not nxt or nxt == k:
+                break
+            k = nxt
+        return k
+
+    indip = {risali(chiave_origine(v)) for v in gruppo
+             if v["area"] != "Community" or v.get("origini")}
     autori = {v["autore"] for v in gruppo if v.get("autore")}  # post Bluesky di un insider
     candidati = {k for t, k in origini if t == "insider"} | autori
     migliore = max(candidati, key=stato.affidabilita, default=None)
