@@ -44,7 +44,7 @@ _UFFICIALI = re.compile(
     r"https?://(?:[\w-]+\.)*("
     r"blog\.playstation\.com|news\.xbox\.com|"
     r"nintendo\.(?:com|co\.jp|co\.uk|de|it)/.*(?:news|whatsnew|press|/ir/)|"
-    r"store\.steampowered\.com/news|steamcommunity\.com/(?:games|app)/[^/]+/(?:announcements|news)|"
+    r"store\.steampowered\.com/news/app/\d+/view/|steamcommunity\.com/(?:games|app)/[^/]+/(?:announcements/detail|news/view)|"
     r"businesswire\.com|prnewswire\.com|globenewswire\.com|"
     r"esrb\.org|pegi\.info|grac\.or\.kr|"
     r"news\.ea\.com|ea\.com/news|news\.ubisoft\.com|bethesda\.net/.*news|rockstargames\.com/newswire|"
@@ -139,10 +139,15 @@ def trova_origini(v, paragrafi=(), link_pagina=()):
         c = classifica_url(u)
         if c:
             aggiungi(*c, u)
-    for u in link_pagina:  # tutta la pagina: valgono solo comunicati ufficiali e post social
+    for u in link_pagina:  # tutta la pagina (post incorporati): solo post social, non menu e barre laterali
         c = classifica_url(u)
-        if c and (c[0] == "ufficiale" or _BSKY_POST.match(u) or _X_POST.match(u)):
+        if c and (_BSKY_POST.match(u) or _X_POST.match(u)):
             aggiungi(*c, u)
+    for _, links in paragrafi:  # comunicati ufficiali: solo se linkati nel testo dell'articolo
+        for u in links:
+            c = classifica_url(u)
+            if c and c[0] == "ufficiale":
+                aggiungi(*c, u)
     for testo, links in paragrafi:
         if not _ATTRIBUZIONE.search(testo):
             continue
