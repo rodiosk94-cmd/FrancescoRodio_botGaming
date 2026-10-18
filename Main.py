@@ -8,24 +8,30 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
 from google import genai
 from google.genai import errors, types
 
+import fonti
+from fonti import INSIDER, Stato, dominio, norm_link
+
 # Modalità test: SOLO_FEED=1 raccoglie le fonti e stampa le statistiche, senza Gemini né Telegram
 SOLO_FEED = os.environ.get("SOLO_FEED") == "1"
+STATO = Stato(Path(__file__).with_name("stato.json"))  # storico leak e link inviati, salvato nel repo
 
 system_instruction = """
 Sei un agente specializzato in Gaming Intelligence, Giornalismo d'Inchiesta e Fact-Checking. Il tuo compito è monitorare, verificare e redigere articoli e report estremamente approfonditi, completi ed esaustivi sul mondo dei videogiochi (PlayStation, Xbox, Nintendo, PC, hardware, software, case di sviluppo e dinamiche di mercato).
 
 ## METODOLOGIA DI RACCOLTA E VERIFICA
 1. Fonti Ufficiali e Primarie: Consulta annunci ufficiali, blog degli sviluppatori e publisher (es. PlayStation Blog, Xbox Wire, Nintendo Direct), dichiarazioni dirette, comunicati stampa e report finanziari.
-2. Double-Check e Fact-Checking: Incrocia ogni notizia su più fonti. Se l'informazione deriva da leaker o rumor (es. Reddit r/GamingLeaksAndRumours, ResetEra), verifica lo storico dell'autore e contrassegnala chiaramente come "RUMOR/LEAK".
+2. Double-Check e Fact-Checking: Incrocia ogni notizia su più fonti. Ogni notizia arriva già con un'ETICHETTA DI CREDIBILITÀ calcolata dal sistema (fonte ufficiale, numero di fonti indipendenti, storico dell'insider): riportala sempre e non alzarla mai di tua iniziativa. Risali sempre alla fonte originale (comunicato, insider, testata che ha dato la notizia per prima) e attribuisci la notizia a lei, non a chi l'ha ripresa.
 3. Analisi Empirica della Community: Analizza a fondo discussioni, thread e reazioni su Reddit, forum e social media per estrarre il sentiment dei giocatori, problemi tecnici o polemiche.
 
 ## STRUTTURA DEL REPORT NOTIZIE (LONG-FORM)
+Ogni notizia si apre con la sua etichetta (es. "✅ UFFICIALE", "🟢 LEAK AFFIDABILE", "🟡 RUMOR") seguita dal titolo.
 1. TITOLO E INQUADRAMENTO GENERALE
 2. TRATTAZIONE COMPLETA E DETTAGLI TECNICI
 3. FACT-CHECKING E TRIANGOLAZIONE FONTI
@@ -103,6 +109,8 @@ MAX_PER_FEED = 6     # voci massime per feed
 MAX_COMMUNITY = 20   # voci massime per feed Reddit/ResetEra
 MAX_ARTICOLI = 40    # articoli da aprire per cercare dichiarazioni (scelti a turno tra le testate)
 MAX_CIT = 3          # paragrafi con dichiarazioni per articolo
+MAX_BSKY = 8         # post massimi per insider su Bluesky
+BSKY_API = "https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed"  # pubblica, senza login
 PAUSA_REDDIT = 8     # secondi tra due richieste a Reddit
 NO_CITAZIONI = ("reddit.com", "resetera.com", "gamespot.com")  # pagine che bloccano il bot
 # titoli che non sono notizie: soluzioni di puzzle, offerte, guide
@@ -173,6 +181,9 @@ def _scarica(url):
     return r.content
 
 
+_HREF = re.compile(r'href=["\']([^"\']+)["\']', re.I)
+
+
 def leggi_feed(url, massimo):
     root = _parse_xml(_scarica(url))
     adesso = datetime.now(timezone.utc)
@@ -189,11 +200,53 @@ def leggi_feed(url, massimo):
         t = _pulisci(titolo.text if titolo is not None else "", 200)
         if not t or _NON_NOTIZIA.search(t):
             continue
+        grezzo = html.unescape(desc.text or "") if desc is not None else ""
+        href = ((link.get("href") or link.text or "").strip() if link is not None else "")
         voci.append({
             "titolo": t,
-            "link": ((link.get("href") or link.text or "").strip() if link is not None else ""),
+            "link": href,
             "data": d.strftime("%d/%m %H:%M UTC") if d else "n.d.",
-            "testo": _pulisci(desc.text if desc is not None else ""),
+            "testo": _pulisci(grezzo),
+            # link dentro la descrizione: su Reddit/ResetEra è l'articolo o il post originale
+            "link_esterni": [u for u in _HREF.findall(grezzo)
+                             if u.startswith("http") and dominio(u) != dominio(href)],
+        })
+        if len(voci) >= massimo:
+            break
+    return voci
+
+
+def leggi_bluesky(nome, handle, massimo):
+    """Ultimi post di un insider su Bluesky (API pubblica, niente repost né risposte)."""
+    r = requests.get(BSKY_API, params={"actor": handle, "filter": "posts_no_replies", "limit": 30},
+                     headers=UA, timeout=20)
+    r.raise_for_status()
+    adesso = datetime.now(timezone.utc)
+    limite = adesso - timedelta(hours=ORE)
+    voci = []
+    for it in r.json().get("feed", []):
+        if it.get("reason"):  # repost di qualcun altro
+            continue
+        post = it.get("post", {})
+        rec = post.get("record", {})
+        d = _data(rec.get("createdAt", ""))
+        if not d or d < limite or d > adesso + timedelta(hours=1):
+            continue
+        testo = " ".join((rec.get("text") or "").split())
+        esterni = [f["uri"] for fc in rec.get("facets", []) for f in fc.get("features", []) if f.get("uri")]
+        ext = (post.get("embed") or {}).get("external") or {}
+        if ext.get("uri"):
+            esterni.append(ext["uri"])
+            testo += f" [link: {ext.get('title', '')}]"
+        if len(testo) < 60 and not esterni:  # battute e reazioni: non sono notizie
+            continue
+        voci.append({
+            "titolo": _pulisci(testo, 160),
+            "link": f"https://bsky.app/profile/{handle}/post/{post.get('uri', '').rsplit('/', 1)[-1]}",
+            "data": d.strftime("%d/%m %H:%M UTC"),
+            "testo": _pulisci(testo, 500),
+            "link_esterni": esterni,
+            "autore": nome,
         })
         if len(voci) >= massimo:
             break
@@ -201,18 +254,25 @@ def leggi_feed(url, massimo):
 
 
 class _Paragrafi(HTMLParser):
-    """Estrae il testo dei paragrafi <p> di una pagina, ignorando script e stili."""
+    """Estrae dalla pagina i paragrafi <p> (con i link che contengono) e tutti i link del corpo."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.paragrafi, self._buf, self._in_p, self._skip = [], [], 0, 0
+        self.link_par, self._link_buf, self.link_pagina = [], [], []
 
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style", "noscript"):
             self._skip += 1
         elif tag == "p":
             self._in_p += 1
-            self._buf = []
+            self._buf, self._link_buf = [], []
+        elif tag == "a":
+            href = dict(attrs).get("href") or ""
+            if href.startswith("http"):
+                self.link_pagina.append(href)
+                if self._in_p:
+                    self._link_buf.append(href)
 
     def handle_endtag(self, tag):
         if tag in ("script", "style", "noscript") and self._skip:
@@ -222,6 +282,7 @@ class _Paragrafi(HTMLParser):
             testo = " ".join("".join(self._buf).split())
             if testo:
                 self.paragrafi.append(testo)
+                self.link_par.append(self._link_buf)
 
     def handle_data(self, data):
         if self._in_p and not self._skip:
@@ -232,22 +293,25 @@ class _Paragrafi(HTMLParser):
 _CITAZIONE = re.compile(r'[“«"]([^”»"]{40,600})[”»"]')
 
 
-def estrai_citazioni(url):
+def analizza_articolo(v):
+    """Apre l'articolo: estrae le dichiarazioni dirette e risale alla fonte originale della notizia."""
+    url = v["link"]
     try:
         r = requests.get(url, headers=UA, timeout=15)
         r.raise_for_status()
         parser = _Paragrafi()
         parser.feed(r.content.decode("utf-8", "replace"))
     except Exception as e:  # sito bloccato o lento: l'articolo resta senza citazioni
-        print(f"[citazioni KO] {url}: {e}")
-        return []
+        print(f"[articolo KO] {url}: {e}")
+        return [], []
     trovate = []
     for par in parser.paragrafi:
         if _CITAZIONE.search(par):
             trovate.append(par[:500] + ("…" if len(par) > 500 else ""))
             if len(trovate) >= MAX_CIT:
                 break
-    return trovate
+    origini = fonti.trova_origini(v, list(zip(parser.paragrafi, parser.link_par)), parser.link_pagina)
+    return trovate, origini
 
 
 def leggi_sicuro(url, massimo):
@@ -262,8 +326,24 @@ def leggi_sicuro(url, massimo):
 
 # Testate in parallelo; Reddit e ResetEra in sequenza, con pausa tra le richieste a Reddit
 lavori = [(area, url) for area, urls in FEEDS.items() if area != "Community" for url in urls]
+insider_bsky = [(nome, d["bsky"]) for nome, d in INSIDER.items() if d["bsky"]]
+
+
+def leggi_bluesky_sicuro(nome, handle):
+    try:
+        voci = leggi_bluesky(nome, handle, MAX_BSKY)
+    except Exception as e:
+        print(f"[KO] Bluesky {handle}: {e}")
+        return None
+    print(f"[OK] Bluesky {handle}: {len(voci)} post")
+    return voci
+
+
 with ThreadPoolExecutor(max_workers=10) as pool:
     esiti = list(pool.map(lambda au: leggi_sicuro(au[1], MAX_PER_FEED), lavori))
+    for (nome, handle), voci in zip(insider_bsky, pool.map(lambda nh: leggi_bluesky_sicuro(*nh), insider_bsky)):
+        lavori.append(("Insider", f"bsky:{handle}"))
+        esiti.append(voci)
 reddit_letti = 0
 for url in FEEDS["Community"]:
     if "reddit.com" in url:
@@ -273,74 +353,149 @@ for url in FEEDS["Community"]:
     lavori.append(("Community", url))
     esiti.append(leggi_sicuro(url, MAX_COMMUNITY))
 
-raccolte = []  # (area, voce)
+raccolte = []  # voci con area, feed, leak e fonti d'origine
 visti = set()   # stesso articolo in più feed (link o titolo identici): lo tengo una volta sola
+gia_inviate = 0
 for (area, url), voci in zip(lavori, esiti):
     for v in voci or []:
-        chiavi = {v["link"].split("?")[0].split("#")[0].rstrip("/").lower(), v["titolo"].lower()}
+        chiavi = {norm_link(v["link"]), v["titolo"].lower()}
         if chiavi & visti:
             continue
         visti |= chiavi
-        v["feed"] = url
-        raccolte.append((area, v))
+        if STATO.gia_inviato(v["link"]):  # già nel report precedente (es. top del giorno di Reddit)
+            gia_inviate += 1
+            continue
+        v["area"], v["feed"] = area, url
+        v["leak"] = fonti.e_leak(v)
+        v["origini"] = fonti.trova_origini(v)  # dal feed: link nella descrizione, insider nominati
+        raccolte.append(v)
 ko = sum(1 for e in esiti if e is None)
-print(f"Feed letti: {len(esiti) - ko}/{len(esiti)} — voci raccolte: {len(raccolte)}")
+print(f"Feed letti: {len(esiti) - ko}/{len(esiti)} — voci raccolte: {len(raccolte)} "
+      f"(+{gia_inviate} già inviate e scartate)")
 
-# 2b. Dichiarazioni: apre gli articoli (in parallelo) e ne estrae i paragrafi con citazioni dirette.
-# Gli articoli si scelgono a turno tra le testate, così nessun sito monopolizza il limite.
+# 2b. Apre gli articoli (in parallelo): dichiarazioni dirette e fonte originale della notizia.
+# Prima i leak (serve sapere da chi vengono), poi gli altri a turno tra le testate.
 per_feed = {}
-for area, v in raccolte:
-    if v["link"].startswith("http") and not any(d in v["link"] for d in NO_CITAZIONI):
+for v in sorted(raccolte, key=lambda v: not v["leak"]):
+    if v["link"].startswith("http") and not any(d in v["link"] for d in NO_CITAZIONI + ("bsky.app",)):
         per_feed.setdefault(v["feed"], []).append(v)
-da_aprire, code = [], list(per_feed.values())
+da_aprire = [c.pop(0) for c in per_feed.values() if c and c[0]["leak"]]
+code = list(per_feed.values())
 while code and len(da_aprire) < MAX_ARTICOLI:
     for coda in code:
         if coda and len(da_aprire) < MAX_ARTICOLI:
             da_aprire.append(coda.pop(0))
     code = [c for c in code if c]
 with ThreadPoolExecutor(max_workers=10) as pool:
-    for v, cit in zip(da_aprire, pool.map(estrai_citazioni, [v["link"] for v in da_aprire])):
+    for v, (cit, orig) in zip(da_aprire, pool.map(analizza_articolo, da_aprire)):
         v["citazioni"] = cit
-print(f"Dichiarazioni trovate in {sum(1 for v in da_aprire if v.get('citazioni'))}/{len(da_aprire)} articoli")
+        if orig:
+            v["origini"] = orig
+print(f"Dichiarazioni trovate in {sum(1 for v in da_aprire if v.get('citazioni'))}/{len(da_aprire)} articoli; "
+      f"fonte originale individuata per {sum(1 for v in raccolte if v['origini'])}/{len(raccolte)} voci")
+
+# 2c. Raggruppa le voci sulla stessa notizia ed etichetta ogni gruppo
+notizie, scartati = [], 0
+for gruppo in fonti.raggruppa(raccolte):
+    etichetta, info = fonti.valuta_gruppo(gruppo, STATO)
+    if etichetta is None:
+        scartati += 1
+        continue
+    peso_area = {"Ufficiali": 0, "Insider": 1}
+    gruppo.sort(key=lambda v: (peso_area.get(v["area"], 3 if v["area"] == "Community" else 2), v["titolo"]))
+    notizie.append({"etichetta": etichetta, "voci": gruppo, **info})
+notizie.sort(key=lambda n: (fonti.ORDINE.index(n["etichetta"]), -len(n["indipendenti"])))
+conteggio_etichette = {}
+for n in notizie:
+    conteggio_etichette[n["etichetta"]] = conteggio_etichette.get(n["etichetta"], 0) + 1
+print(f"Notizie: {len(notizie)} {conteggio_etichette} — rumor senza fonte d'origine scartati: {scartati}")
+
+
+def descrivi_fonte(chiave):
+    c, n = STATO.conteggi(chiave)
+    storico = f"storico: {c} leak confermati, {n} non confermati" if c or n else "storico: nessun dato"
+    return f"{chiave} (affidabilità {STATO.affidabilita(chiave):.0%}, {storico})"
+
 
 blocchi = []
 titoli = []  # (area, titolo, link) per il riepilogo di emergenza
-for area, v in raccolte:
-    titoli.append((area, v["titolo"], v["link"]))
-    blocco = f"[{area}] {v['titolo']}\nFonte: {v['link']}\nData: {v['data']}\n{v['testo']}"
-    if v.get("citazioni"):
-        blocco += "\nCitazioni dall'articolo:\n" + "\n".join(f"> {c}" for c in v["citazioni"])
-    blocchi.append(blocco)
+consentiti = set()  # link che il report può citare
+for i, n in enumerate(notizie, 1):
+    righe = [f"=== NOTIZIA {i} — ETICHETTA: {n['etichetta']} ==="]
+    for o in n["origini"]:
+        tipo = {"ufficiale": "comunicato ufficiale", "insider": "insider", "testata": "testata"}[o["tipo"]]
+        chi = descrivi_fonte(o["chiave"]) if o["tipo"] == "insider" else o["chiave"]
+        righe.append(f"Fonte originale ({tipo}): {chi}" + (f" — {o['url']}" if o["url"] else ""))
+        if o["url"]:
+            consentiti.add(o["url"])
+    autori = {v["autore"] for v in n["voci"] if v.get("autore")}
+    for a in sorted(autori):
+        righe.append(f"Post diretto dell'insider: {descrivi_fonte(a)}")
+    if len(n["indipendenti"]) > 1:
+        righe.append(f"Fonti indipendenti ({len(n['indipendenti'])}): {', '.join(n['indipendenti'])}")
+    for k, v in enumerate(n["voci"]):
+        titoli.append((v["area"], v["titolo"], v["link"]))
+        consentiti.add(v["link"])
+        consentiti.update(v.get("link_esterni", []))
+        righe.append(f"[{v['area']}] {v['titolo']}\nFonte: {v['link']}\nData: {v['data']}")
+        if k == 0 or v["area"] in ("Ufficiali", "Insider", "Community"):  # dalle repliche basta il titolo
+            righe.append(v["testo"])
+        if v.get("citazioni"):
+            righe.append("Citazioni dall'articolo:\n" + "\n".join(f"> {c}" for c in v["citazioni"]))
+    blocchi.append("\n".join(righe))
 
 if not blocchi:
     sys.exit("Nessuna notizia raccolta dai feed: controlla le righe [KO] nel log.")
 
+# Leak ancora in attesa di conferma: Gemini segnala quelli confermati dalle fonti ufficiali di oggi
+aperti = sorted(STATO.leak_aperti(), key=lambda l: l["data"], reverse=True)[:40]
+sezione_leak = ""
+if aperti and any(n["etichetta"] == fonti.UFFICIALE for n in notizie):
+    sezione_leak = (
+        "\n\nLEAK IN ATTESA DI CONFERMA (dai report passati):\n"
+        + "\n".join(f"- id {l['id']} ({l['data']}, fonte {l['fonte']}): {l['titolo']}" for l in aperti)
+        + "\nSe una notizia ✅ UFFICIALE di oggi conferma in modo esplicito uno di questi leak, citalo nella "
+          "notizia ('confermato il leak di <fonte> del <data>'). In ogni caso chiudi il report con UNA riga "
+          "finale nel formato 'CONFERMATI: id1, id2' oppure 'CONFERMATI: nessuno'. Conta solo le conferme "
+          "ufficiali, non le notizie che riprendono lo stesso rumor."
+    )
+
 prompt = (
-    f"Qui sotto trovi notizie e discussioni delle ultime {ORE} ore raccolte da feed RSS. "
+    f"Qui sotto trovi notizie e discussioni delle ultime {ORE} ore raccolte da feed RSS e da Bluesky, "
+    "già raggruppate per notizia ed etichettate. "
     "Scrivi il report usando SOLO queste fonti: non aggiungere fatti, date o link che non compaiono qui. "
-    "Nella sitografia usa esattamente i link indicati alla voce 'Fonte'.\n"
-    "FONTI: [Ufficiali] sono comunicati di piattaforme e store: trattale come fonte primaria. "
-    "[Italia], [Estero], [Piattaforme] e [Giappone] sono testate giornalistiche: incrociale per il "
-    "fact-checking. [Industria] riguarda mercato, vendite, acquisizioni e licenziamenti. "
-    "[Community] sono discussioni di Reddit e ResetEra: usale per le reazioni dei giocatori e per i "
-    "RUMOR/LEAK, mai come conferma di un fatto.\n"
-    "SELEZIONE: molte voci parlano dello stesso fatto da testate diverse: raggruppale in un'unica "
-    "notizia e cita tutte le fonti che la riportano. Dai la precedenza alle notizie confermate da più "
-    "fonti o da fonti ufficiali; tralascia recensioni di prodotti, guide, offerte e contenuti promozionali.\n"
+    "Ogni notizia del report deve avere almeno un link: nella sitografia usa esattamente i link indicati "
+    "alle voci 'Fonte' e 'Fonte originale'.\n"
+    "ETICHETTE (calcolate dal sistema, riportale in apertura di ogni notizia e non alzarle mai): "
+    "✅ UFFICIALE = c'è un comunicato di piattaforma/publisher o lo cita direttamente; "
+    "🟢 LEAK AFFIDABILE = leak da un insider con buono storico o da almeno due fonti indipendenti; "
+    "🟢 CONFERMATA DA PIÙ FONTI = notizia riportata da più fonti indipendenti; "
+    "🟡 RUMOR = una sola fonte non verificata: presentalo come indiscrezione, al condizionale; "
+    "📰 FONTE UNICA = notizia di una sola testata; "
+    "💬 COMMUNITY = solo discussioni Reddit/ResetEra: usale per le reazioni dei giocatori, mai come notizia. "
+    "Se unisci due gruppi che parlano dello stesso fatto (es. un articolo italiano e uno inglese), usa "
+    "l'etichetta più alta tra i due; non promuovere un 🟡 RUMOR per nessun altro motivo.\n"
+    "FONTE ORIGINALE: quando c'è la riga 'Fonte originale', attribuisci la notizia a quella fonte "
+    "(es. 'secondo Tom Henderson', 'come annunciato sul PlayStation Blog') e mettila per prima in sitografia; "
+    "le testate che l'hanno ripresa sono solo conferme. Per i leak indica l'affidabilità storica dell'insider "
+    "quando è riportata. I post [Insider] sono post Bluesky dei giornalisti: ignora quelli non legati ai videogiochi.\n"
+    "SELEZIONE: dai la precedenza alle notizie ✅ e 🟢; tralascia recensioni di prodotti, guide, offerte e "
+    "contenuti promozionali.\n"
     "DICHIARAZIONI: le righe 'Citazioni dall'articolo' sono paragrafi originali che contengono "
     "dichiarazioni dirette. Nella trattazione di ogni notizia riporta tra virgolette le dichiarazioni "
     "rilevanti di sviluppatori, director, publisher o dirigenti, indicando chi parla e il suo ruolo "
     "SOLO se risultano dal testo. Usa esclusivamente frasi presenti in quelle righe: non inventare, "
     "non completare e non attribuire frasi a persone diverse. Citazioni brevi (massimo 2-3 frasi); "
     "se sono in inglese traducile in italiano indicando '(trad.)'. Se una notizia non ha citazioni, "
-    "non aggiungerne.\n\n"
-    + "\n\n---\n\n".join(blocchi)
+    "non aggiungerne."
+    + sezione_leak + "\n\n"
+    + "\n\n".join(blocchi)
 )
 
 if SOLO_FEED:
     conteggio = {}
-    for area, _ in raccolte:
-        conteggio[area] = conteggio.get(area, 0) + 1
+    for v in raccolte:
+        conteggio[v["area"]] = conteggio.get(v["area"], 0) + 1
     print("Voci per area:", conteggio)
     print(f"Prompt: {len(prompt)} caratteri")
     if os.environ.get("GEMINI_API_KEY"):  # conteggio esatto dei token, se la chiave è disponibile
@@ -379,8 +534,33 @@ for giro in range(GIRI):
         print(f"Nessun modello disponibile, nuovo giro tra {PAUSA_GIRO}s")
         time.sleep(PAUSA_GIRO)
 
+adesso = fonti.ora_utc()
+confermati = []
 if response is not None:
-    article_text = response.text
+    article_text, ids = fonti.estrai_confermati(response.text)
+    # nel report restano solo i link presenti nelle fonti raccolte: niente URL inventati
+    article_text, rimossi = fonti.filtra_link(article_text, consentiti)
+    if rimossi:
+        print(f"Link non presenti nelle fonti rimossi dal report: {len(rimossi)} → {rimossi[:5]}")
+    # conferme dei leak passati: quelle segnalate da Gemini (solo id esistenti) + somiglianza
+    # diretta con i titoli delle notizie ufficiali di oggi
+    aperti_ids = {l["id"] for l in STATO.leak_aperti()}
+    ids = [i for i in ids if i in aperti_ids]
+    titoli_ufficiali = [fonti.parole(v["titolo"]) for n in notizie if n["etichetta"] == fonti.UFFICIALE
+                        for v in n["voci"]]
+    for l in STATO.leak_aperti():
+        p = fonti.parole(l["titolo"])
+        if any(fonti.simili(p, t, minimo=4, soglia=0.6) for t in titoli_ufficiali):
+            ids.append(l["id"])
+    for lid in dict.fromkeys(ids):
+        l = STATO.conferma(lid, adesso)
+        if l:
+            confermati.append(l)
+            print(f"Leak confermato: [{l['id']}] {l['titolo']} — punto a {l['fonte']}")
+    if confermati:
+        article_text += "\n**📈 STORICO LEAK**\n" + "\n".join(
+            f"• Confermato il leak di {l['fonte']} del {l['data']}: {l['titolo']} "
+            f"(affidabilità ora {STATO.affidabilita(l['fonte']):.0%})" for l in confermati)
 else:
     # Gemini irraggiungibile: invio comunque i titoli raccolti, senza report
     print("Gemini non disponibile: invio il riepilogo dei titoli.")
@@ -443,3 +623,23 @@ def send_chunk(chunk: str) -> None:
 for chunk in split_text(article_text):
     send_chunk(chunk)
     time.sleep(1)  # evita il flood limit di Telegram
+
+# 5. Aggiorna lo storico (il workflow fa il commit di stato.json): solo dopo un invio riuscito
+if response is not None:
+    usati = {norm_link(u) for u in fonti.link_nel_testo(article_text)}
+    STATO.segna_inviati([u for u in consentiti if norm_link(u) in usati], adesso)
+    nuovi = 0
+    for n in notizie:
+        if n["etichetta"] not in (fonti.AFFIDABILE, fonti.RUMOR):
+            continue
+        links = [v["link"] for v in n["voci"]] + [o["url"] for o in n["origini"] if o["url"]]
+        if not any(norm_link(u) in usati for u in links):  # leak non finito nel report
+            continue
+        url_origine = next((o["url"] for o in n["origini"] if o["url"]), n["voci"][0]["link"])
+        if STATO.registra_leak(n["voci"][0]["titolo"], n["fonte_principale"], url_origine, n["etichetta"], adesso):
+            nuovi += 1
+    print(f"Storico: {nuovi} nuovi leak registrati, {len(confermati)} confermati")
+for l in STATO.scadenze(adesso):
+    print(f"Leak mai confermato dopo {fonti.GIORNI_SCADENZA} giorni: [{l['id']}] {l['titolo']} ({l['fonte']})")
+STATO.pulizia(adesso)
+STATO.salva()

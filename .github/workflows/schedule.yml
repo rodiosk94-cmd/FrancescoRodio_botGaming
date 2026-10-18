@@ -7,6 +7,13 @@ on:
     - cron: '0 4,18 * * *'
   workflow_dispatch: # Permette di avviare l'automazione manualmente con un pulsante
 
+permissions:
+  contents: write # per salvare stato.json (storico leak e link già inviati) nel repo
+
+concurrency:
+  group: gaming-news # due esecuzioni insieme si sovrascriverebbero lo storico
+  cancel-in-progress: false
+
 jobs:
   run-agent:
     runs-on: ubuntu-latest
@@ -31,3 +38,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -u Main.py # -u = log in tempo reale
 
+      - name: Save history
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add stato.json
+          if git diff --cached --quiet; then
+            echo "Storico invariato"
+            exit 0
+          fi
+          git commit -m "Aggiorna storico leak e notizie inviate [skip ci]"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
