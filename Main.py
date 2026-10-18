@@ -16,10 +16,14 @@ from google import genai
 from google.genai import errors, types
 
 import fonti
+import radar
 from fonti import INSIDER, Stato, dominio, norm_link
 
 # Modalità test: SOLO_FEED=1 raccoglie le fonti e stampa le statistiche, senza Gemini né Telegram
 SOLO_FEED = os.environ.get("SOLO_FEED") == "1"
+# INVIA_TELEGRAM=0: prova completa (Gemini + dati per Radar) senza messaggio e senza toccare lo storico
+INVIA_TELEGRAM = os.environ.get("INVIA_TELEGRAM", "1") != "0"
+RADAR_URL = os.environ.get("RADAR_URL", "").strip()  # indirizzo dell'app, se pubblicata
 STATO = Stato(Path(__file__).with_name("stato.json"))  # storico leak e link inviati, salvato nel repo
 
 system_instruction = """
@@ -206,6 +210,7 @@ def leggi_feed(url, massimo):
             "titolo": t,
             "link": href,
             "data": d.strftime("%d/%m %H:%M UTC") if d else "n.d.",
+            "iso": d.isoformat(timespec="minutes") if d else None,
             "testo": _pulisci(grezzo),
             # link dentro la descrizione: su Reddit/ResetEra è l'articolo o il post originale
             "link_esterni": [u for u in _HREF.findall(grezzo)
@@ -244,6 +249,7 @@ def leggi_bluesky(nome, handle, massimo):
             "titolo": _pulisci(testo, 160),
             "link": f"https://bsky.app/profile/{handle}/post/{post.get('uri', '').rsplit('/', 1)[-1]}",
             "data": d.strftime("%d/%m %H:%M UTC"),
+            "iso": d.isoformat(timespec="minutes"),
             "testo": _pulisci(testo, 500),
             "link_esterni": esterni,
             "autore": nome,
@@ -487,7 +493,15 @@ prompt = (
     "SOLO se risultano dal testo. Usa esclusivamente frasi presenti in quelle righe: non inventare, "
     "non completare e non attribuire frasi a persone diverse. Citazioni brevi (massimo 2-3 frasi); "
     "se sono in inglese traducile in italiano indicando '(trad.)'. Se una notizia non ha citazioni, "
-    "non aggiungerne."
+    "non aggiungerne.\n"
+    "DATI PER L'APP: dopo il report (e prima dell'eventuale riga CONFERMATI) aggiungi un blocco di codice "
+    "```json con un array, un oggetto per ogni notizia trattata nel report, nello stesso ordine: "
+    "{\"notizie\": [i numeri delle NOTIZIA che hai usato, es. [4, 7] se le hai unite], "
+    "\"titolo\": \"titolo in italiano, massimo 90 caratteri\", "
+    "\"riassunto\": \"2-3 frasi in italiano, solo fatti presenti nelle fonti, al condizionale per i rumor\", "
+    "\"categoria\": una tra \"PlayStation\", \"Xbox\", \"Nintendo\", \"PC\", \"Multipiattaforma\", "
+    "\"Industria\", \"Hardware\", \"Mobile\", \"Altro\"}. Niente link e niente testo dopo il blocco, "
+    "a parte la riga CONFERMATI se richiesta."
     + sezione_leak + "\n\n"
     + "\n\n".join(blocchi)
 )
@@ -536,8 +550,11 @@ for giro in range(GIRI):
 
 adesso = fonti.ora_utc()
 confermati = []
+meta_app = None
 if response is not None:
     article_text, ids = fonti.estrai_confermati(response.text)
+    article_text, meta_app = fonti.estrai_dati_app(article_text, len(notizie))
+    print(f"Dati per Radar da Gemini: {len(meta_app) if meta_app else 'assenti, uso i gruppi'}")
     # nel report restano solo i link presenti nelle fonti raccolte: niente URL inventati
     article_text, rimossi = fonti.filtra_link(article_text, consentiti)
     if rimossi:
@@ -620,26 +637,41 @@ def send_chunk(chunk: str) -> None:
         sys.exit(f"Invio Telegram fallito ({r.status_code}): {r.text}")
 
 
-for chunk in split_text(article_text):
-    send_chunk(chunk)
-    time.sleep(1)  # evita il flood limit di Telegram
+voci_app = radar.componi(notizie, meta_app, STATO)  # notizie come le mostra Radar
+usati = {norm_link(u) for u in fonti.link_nel_testo(article_text)}
+if not meta_app:  # senza i dati di Gemini, nell'app vanno le notizie finite nel report (o tutte, se non c'è)
+    nel_report = [e for e in voci_app if any(norm_link(u) in usati for u in e["_links"])]
+    voci_app = nel_report or voci_app
+if RADAR_URL:
+    article_text = article_text.rstrip() + f"\n\n[📡 Apri il report in Radar]({RADAR_URL})\n"
 
-# 5. Aggiorna lo storico (il workflow fa il commit di stato.json): solo dopo un invio riuscito
-if response is not None:
-    usati = {norm_link(u) for u in fonti.link_nel_testo(article_text)}
-    STATO.segna_inviati([u for u in consentiti if norm_link(u) in usati], adesso)
-    nuovi = 0
-    for n in notizie:
-        if n["etichetta"] not in (fonti.AFFIDABILE, fonti.RUMOR):
-            continue
-        links = [v["link"] for v in n["voci"]] + [o["url"] for o in n["origini"] if o["url"]]
-        if not any(norm_link(u) in usati for u in links):  # leak non finito nel report
-            continue
-        url_origine = next((o["url"] for o in n["origini"] if o["url"]), n["voci"][0]["link"])
-        if STATO.registra_leak(n["voci"][0]["titolo"], n["fonte_principale"], url_origine, n["etichetta"], adesso):
-            nuovi += 1
-    print(f"Storico: {nuovi} nuovi leak registrati, {len(confermati)} confermati")
-for l in STATO.scadenze(adesso):
-    print(f"Leak mai confermato dopo {fonti.GIORNI_SCADENZA} giorni: [{l['id']}] {l['titolo']} ({l['fonte']})")
-STATO.pulizia(adesso)
-STATO.salva()
+if INVIA_TELEGRAM:
+    for chunk in split_text(article_text):
+        send_chunk(chunk)
+        time.sleep(1)  # evita il flood limit di Telegram
+else:
+    print(f"INVIA_TELEGRAM=0: messaggio non inviato ({len(article_text)} caratteri), storico non modificato")
+
+# 5. Aggiorna lo storico (il workflow fa il commit di stato.json): solo dopo un invio riuscito.
+# I leak si registrano per notizia come la mostra Radar: due gruppi che Gemini ha unito sono UN leak.
+nuovi = 0
+for e in voci_app:
+    if e["_etichetta"] not in (fonti.AFFIDABILE, fonti.RUMOR):
+        continue
+    if INVIA_TELEGRAM and response is not None:
+        lid, nuovo = STATO.registra_leak(e["titolo"], e["_fonte_principale"], e["_url_origine"],
+                                         e["_etichetta"], adesso, e["_links"])
+        nuovi += nuovo
+        e["leak_id"] = lid
+    else:
+        gia = STATO.trova_leak(e["titolo"], e["_links"], e["_fonte_principale"])
+        e["leak_id"] = gia["id"] if gia else None
+if INVIA_TELEGRAM:
+    if response is not None:
+        STATO.segna_inviati([u for u in consentiti if norm_link(u) in usati], adesso)
+        print(f"Storico: {nuovi} nuovi leak registrati, {len(confermati)} confermati")
+    for l in STATO.scadenze(adesso):
+        print(f"Leak mai confermato dopo {fonti.GIORNI_SCADENZA} giorni: [{l['id']}] {l['titolo']} ({l['fonte']})")
+    STATO.pulizia(adesso)
+    STATO.salva()
+print(f"Radar: report {radar.scrivi(voci_app, STATO, adesso, ORE)} con {len(voci_app)} notizie")

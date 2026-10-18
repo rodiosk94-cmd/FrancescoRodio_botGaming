@@ -64,7 +64,8 @@ COMMUNITY = ("reddit.com", "resetera.com")
 
 # Indizi che una notizia è un leak/rumor e non un fatto annunciato
 _LEAK = re.compile(
-    r"\b(leak\w*|rumou?r\w*|insider|reportedly|allegedly|datamin\w*|i'?m told|sources? (?:say|claim|familiar)|"
+    r"\b(leak\w*|rumou?r\w*|reportedly|allegedly|datamin\w*|i'?m told|sources? (?:say|claim|familiar)|exclusive(?=:)|"
+    r"(?:an|one|the) insider|insiders? (?:say|says|claim|claims|suggest|suggests|report|reports)|"
     r"according to (?:sources|a report|insiders?)|indiscrezion\w*|trapelat\w*|secondo (?:fonti|alcune fonti|un insider)|"
     r"sarebbe in sviluppo|potrebbe essere annunciat\w*|voci di corridoio|rating (?:board|appears)|"
     r"classificat\w+ in (?:corea|taiwan)|rated in (?:korea|taiwan))\b", re.I)
@@ -159,10 +160,15 @@ def trova_origini(v, paragrafi=(), link_pagina=()):
     return sorted(trovate.values(), key=lambda o: peso[o["tipo"]])
 
 
+_NOMI_SITI = re.compile(r"insider[- ]gaming|business insider|xbox insider\w*|windows insider\w*", re.I)
+
+
 def e_leak(v):
     if "gamingleaksandrumours" in v.get("link", "").lower():  # su quel subreddit è tutto rumor
         return True
-    return bool(_LEAK.search(v.get("titolo", "") + " " + v.get("testo", "")))
+    # "Insider Gaming" e simili sono nomi di siti o programmi, non indizi di un leak
+    testo = _NOMI_SITI.sub(" ", v.get("titolo", "") + " " + v.get("testo", ""))
+    return bool(_LEAK.search(testo))
 
 
 # ---------------------------------------------------------------------------
@@ -175,14 +181,38 @@ anche sono stato stata essere questo questa quello quella nuovo nuova nuovi nuov
 tutte dopo prima solo molto più per con non una uno gli les des""".split())
 
 
+_SINONIMI = [
+    (r"\bplay ?station ?([2-6])\b", r"ps\1"), (r"\bnintendo switch ?2\b", "switch2"), (r"\bswitch 2\b", "switch2"),
+    (r"\bxbox series [xs]\b", "xboxseries"), (r"(\d)[,.](\d{3})\b", r"\1\2"), (r"['’]s\b", ""),
+]
+
+
 def parole(titolo):
-    """Parole significative di un titolo, troncate a 5 lettere (delays/delayed → delay)."""
+    """Parole significative di un titolo, normalizzate (PlayStation 6 → ps6, $1,000 → 1000, costs → cost)
+    e troncate a 5 lettere (delays/delayed → delay)."""
+    t = (titolo or "").lower()
+    for rx, sost in _SINONIMI:
+        t = re.sub(rx, sost, t)
     out = set()
-    for w in re.findall(r"[\w']+", (titolo or "").lower()):
+    for w in re.findall(r"[\w']+", t):
         w = w.strip("'")
+        if len(w) > 3 and w.endswith("s") and not w.endswith("ss") and not w.isdigit():
+            w = w[:-1]
         if w.isdigit() or (len(w) >= 3 and w not in _STOP):
             out.add(w[:5])
     return out
+
+
+def stesso_leak(a, b, stessa_fonte):
+    """Due titoli raccontano lo stesso leak? Più permissivo se vengono dalla stessa fonte d'origine,
+    purché condividano un nome con cifre (ps6, 2027…) o almeno tre parole."""
+    if simili(a, b):
+        return True
+    comuni = a & b
+    con_cifre = any(any(ch.isdigit() for ch in w) for w in comuni)
+    if stessa_fonte:
+        return len(comuni) >= 3 or (len(comuni) >= 2 and con_cifre)
+    return len(comuni) >= 4 and con_cifre and len(comuni) / max(1, len(a | b)) >= 0.15
 
 
 def simili(a, b, minimo=2, soglia=0.5):
@@ -257,17 +287,30 @@ class Stato:
     def leak_aperti(self):
         return [l for l in self.leak if l["stato"] == "aperto"]
 
-    def registra_leak(self, titolo, fonte, link, etichetta, adesso):
-        p = parole(titolo)
-        for l in self.leak_aperti():  # già registrato (stesso leak ripreso il giorno dopo)
-            if simili(p, parole(l["titolo"])):
-                return None
-        lid = hashlib.sha1(" ".join(sorted(p)).encode()).hexdigest()[:6]
+    def trova_leak(self, titolo, links=(), fonte=None):
+        """Leak aperto già registrato: stesso link d'origine, o titolo che racconta lo stesso leak."""
+        p, ln = parole(titolo), {norm_link(u) for u in links if u}
+        for l in self.leak_aperti():
+            stessa = bool(fonte) and fonte == l["fonte"]
+            if norm_link(l["link"]) in ln or any(stesso_leak(p, parole(t), stessa)
+                                                 for t in [l["titolo"], *l.get("alias", [])]):
+                return l
+        return None
+
+    def registra_leak(self, titolo, fonte, link, etichetta, adesso, altri_link=()):
+        """Ritorna (id, nuovo). Un leak già aperto (ripreso il giorno dopo, o da un'altra testata) non si duplica."""
+        gia = self.trova_leak(titolo, (link, *altri_link), fonte)
+        if gia:  # il titolo nuovo diventa un alias: le prossime riprese si riconoscono meglio
+            alias = gia.setdefault("alias", [])
+            if titolo != gia["titolo"] and titolo not in alias:
+                alias[:] = (alias + [titolo])[-6:]
+            return gia["id"], False
+        lid = hashlib.sha1(" ".join(sorted(parole(titolo))).encode()).hexdigest()[:6]
         if any(l["id"] == lid for l in self.leak):
-            return None
+            return lid, False
         self.leak.append({"id": lid, "titolo": titolo, "fonte": fonte, "link": link, "etichetta": etichetta,
                           "data": adesso.date().isoformat(), "stato": "aperto"})
-        return lid
+        return lid, True
 
     def conferma(self, lid, adesso):
         for l in self.leak:
@@ -417,3 +460,106 @@ def estrai_confermati(testo):
 
 def ora_utc():
     return datetime.now(timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Nomi leggibili delle fonti e categorie (per Radar)
+# ---------------------------------------------------------------------------
+NOMI = {
+    "blog.playstation.com": "PlayStation Blog", "news.xbox.com": "Xbox Wire", "store.steampowered.com": "Steam",
+    "everyeye.it": "Everyeye", "multiplayer.it": "Multiplayer.it", "spaziogames.it": "SpazioGames",
+    "it.ign.com": "IGN Italia", "gamesource.it": "GameSource", "console-tribe.com": "Console Tribe",
+    "nintendon.it": "Nintendon", "akibagamers.it": "AkibaGamers", "gamerbrain.net": "GamerBrain",
+    "ign.com": "IGN", "gamespot.com": "GameSpot", "eurogamer.net": "Eurogamer",
+    "videogameschronicle.com": "VGC", "polygon.com": "Polygon", "kotaku.com": "Kotaku",
+    "gamesradar.com": "GamesRadar+", "gameinformer.com": "Game Informer", "theverge.com": "The Verge",
+    "destructoid.com": "Destructoid", "gamingbolt.com": "GamingBolt", "insider-gaming.com": "Insider Gaming",
+    "wccftech.com": "Wccftech", "digitalfoundry.net": "Digital Foundry", "pushsquare.com": "Push Square",
+    "purexbox.com": "Pure Xbox", "nintendolife.com": "Nintendo Life", "pcgamer.com": "PC Gamer",
+    "rockpapershotgun.com": "Rock Paper Shotgun", "gematsu.com": "Gematsu", "siliconera.com": "Siliconera",
+    "automaton-media.com": "Automaton", "gamesindustry.biz": "GamesIndustry.biz",
+    "gamedeveloper.com": "Game Developer", "resetera.com": "ResetEra", "neogaf.com": "NeoGAF",
+    "dealabs.com": "Dealabs", "gamesbeat.com": "GamesBeat", "venturebeat.com": "VentureBeat",
+    "mp1st.com": "MP1st", "breakit.se": "Breakit", "rockstargames.com": "Rockstar Newswire",
+    "nintendo.com": "Nintendo", "nintendo.co.jp": "Nintendo", "bloomberg.com": "Bloomberg",
+    "windowscentral.com": "Windows Central", "esrb.org": "ESRB", "pegi.info": "PEGI",
+    "grac.or.kr": "Ente di rating coreano", "x.com": "X", "twitter.com": "X", "bsky.app": "Bluesky",
+}
+
+
+def nome_fonte(x):
+    """Nome leggibile di un link, di un dominio o di un insider."""
+    if not x:
+        return ""
+    if x.startswith("http"):
+        if "reddit.com" in x:
+            m = re.search(r"/r/([^/+]+)", x)
+            return f"Reddit · r/{m.group(1)}" if m else "Reddit"
+        m = _BSKY_POST.match(x)
+        if m:
+            return _HANDLE_BSKY.get(m.group(1).lower(), "@" + m.group(1))
+        m = _X_POST.match(x)
+        if m:
+            return _HANDLE_X.get(m.group(1).lower(), "@" + m.group(1))
+        x = dominio(x)
+    if x in INSIDER or x.startswith("@"):
+        return x
+    for d, n in NOMI.items():
+        if x == d or x.endswith("." + d):
+            return n
+    return x
+
+
+CATEGORIE = ("PlayStation", "Xbox", "Nintendo", "PC", "Multipiattaforma", "Industria", "Hardware", "Mobile", "Altro")
+_CAT = [
+    ("PlayStation", r"\b(ps[456]|playstation|sony|state of play|ps plus|dualsense)\b"),
+    ("Xbox", r"\b(xbox|game pass|microsoft)\b"),
+    ("Nintendo", r"\b(nintendo|switch|mario|zelda|pok[eé]mon)\b"),
+    ("PC", r"\b(pc|steam|valve|epic games store)\b"),
+    ("Mobile", r"\b(ios|android|mobile|iphone)\b"),
+]
+
+
+def categoria(titolo, area=""):
+    if area == "Industria":
+        return "Industria"
+    trovate = [c for c, rx in _CAT if re.search(rx, titolo or "", re.I)]
+    return trovate[0] if len(trovate) == 1 else ("Multipiattaforma" if trovate else "Altro")
+
+
+_JSON_APP = re.compile(r"```json\s*(.*?)(?:```|\Z)", re.S | re.I)
+
+
+def estrai_dati_app(testo, n_max):
+    """Toglie dal report il blocco ```json per Radar e lo valida. Ritorna (testo, voci o None)."""
+    trovati = list(_JSON_APP.finditer(testo))
+    if not trovati:
+        return testo, None
+    b = trovati[-1]
+    testo = (testo[:b.start()] + testo[b.end():]).rstrip() + "\n"
+    try:
+        dati = json.loads(b.group(1).strip())
+    except ValueError:
+        return testo, None
+    voci = []
+    for d in dati if isinstance(dati, list) else []:
+        if not isinstance(d, dict):
+            continue
+        nums = []
+        for x in d.get("notizie") or []:
+            try:
+                n = int(x)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= n <= n_max and n not in nums:
+                nums.append(n)
+        if not nums:
+            continue
+        cat = str(d.get("categoria") or "")
+        voci.append({
+            "notizie": nums,
+            "titolo": " ".join(str(d.get("titolo") or "").split())[:140],
+            "riassunto": " ".join(str(d.get("riassunto") or "").split())[:900],
+            "categoria": cat if cat in CATEGORIE else "",
+        })
+    return testo, voci or None

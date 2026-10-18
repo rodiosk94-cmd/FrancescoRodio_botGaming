@@ -1,0 +1,65 @@
+name: Deploy Radar
+
+# Pubblica la cartella app/ (PWA + dati scritti dal bot) su GitHub Pages.
+# Parte dopo ogni report (chiamato da schedule.yml), quando cambia il codice dell'app, o a mano.
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/deploy-radar.yml']
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: read
+    outputs:
+      attivo: ${{ steps.pages.outputs.attivo }}
+    steps:
+      - name: Check GitHub Pages
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/pages" --jq .build_type 2>/dev/null | grep -qx workflow; then
+            echo "attivo=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "GitHub Pages non è attivo con sorgente 'GitHub Actions': salto la pubblicazione"
+            echo "attivo=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: check
+    if: needs.check.outputs.attivo == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: radar-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main # l'ultima versione, con i dati appena salvati dal report
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload app
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: app
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

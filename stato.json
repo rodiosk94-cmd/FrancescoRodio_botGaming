@@ -70,103 +70,56 @@
  },
  "leak": [
   {
+   "alias": [
+    "Metal band Genitorturers allegedly claims a Vampire: The Masquerade - Bloodlines remake is coming, getting a dozen crusty nerds way too worked up",
+    "Vampire: The Masquerade - Bloodlines avrà una remaster? Nuovi rumor ne parlano"
+   ],
    "data": "2026-10-18",
-   "etichetta": "🟢 LEAK AFFIDABILE",
+   "etichetta": "🟡 RUMOR",
    "fonte": "bandsintown.com",
    "id": "ef1946",
    "link": "https://www.bandsintown.com/e/1040026953-genitorturers-at-the-meadows?came_from=209",
    "stato": "aperto",
-   "titolo": "Metal band Genitorturers allegedly claims a Vampire: The Masquerade - Bloodlines remake is coming, getting a dozen crusty nerds way too worked up"
+   "titolo": "Vampire: The Masquerade – Bloodlines, la band Genitorturers parla di un remake"
   },
   {
-   "data": "2026-10-18",
-   "etichetta": "🟡 RUMOR",
-   "fonte": "multiplayer.it",
-   "id": "cb9cd1",
-   "link": "https://multiplayer.it/notizie/vampire-the-masquerade-bloodlines-remaster-nuovi-rumor-parlano.html",
-   "stato": "aperto",
-   "titolo": "Vampire: The Masquerade - Bloodlines avrà una remaster? Nuovi rumor ne parlano"
-  },
-  {
-   "data": "2026-10-18",
-   "etichetta": "🟡 RUMOR",
-   "fonte": "wccftech.com",
-   "id": "f36c13",
-   "link": "https://wccftech.com/sonys-playstation-6-price-set-to-surpass-1000-ram-ssd-costs-680/",
-   "stato": "aperto",
-   "titolo": "Sony’s PlayStation 6 Price Is Set To Surpass $1000, As RAM and SSD Costs Have Risen Over $680"
-  },
-  {
+   "alias": [
+    "Sony’s PlayStation 6 Price Is Set To Surpass $1000, As RAM and SSD Costs Have Risen Over $680",
+    "The PS6's memory and storage alone reportedly cost more than $680",
+    "The PlayStation 6 stands to be ludicrously expensive as its production cost alone reportedly approaches $1000",
+    "PS6 Price Tag Facing $1,000+ Nightmare as AI Data Centres Send Component Costs Soaring"
+   ],
    "data": "2026-10-18",
    "etichetta": "🟡 RUMOR",
    "fonte": "neogaf.com",
    "id": "a31473",
    "link": "https://www.neogaf.com/threads/keplerl2-ps6-is-40-tflops-and-helix-is-56-tflops-final-layouts-taped-out.1701752/page-36#post-272101878",
    "stato": "aperto",
-   "titolo": "PS6 Price Tag Facing $1,000+ Nightmare as AI Data Centres Send Component Costs Soaring"
+   "titolo": "PS6, il prezzo potrebbe superare i 1000 dollari"
   },
   {
+   "alias": [
+    "[GamesBeat] Grand Theft Auto VI’s PC release is slated for Q1 2027"
+   ],
    "data": "2026-10-18",
    "etichetta": "🟡 RUMOR",
    "fonte": "gamesbeat.com",
    "id": "fa811c",
    "link": "https://gamesbeat.com/grand-theft-auto-vis-pc-release-is-slated-for-q1-2027/",
    "stato": "aperto",
-   "titolo": "[GamesBeat] Grand Theft Auto VI’s PC release is slated for Q1 2027"
+   "titolo": "GTA VI su PC nel primo trimestre 2027"
   },
   {
-   "data": "2026-10-18",
-   "etichetta": "🟢 LEAK AFFIDABILE",
-   "fonte": "Tom Henderson",
-   "id": "94ff8a",
-   "link": "https://insider-gaming.com/modern-warfare-4-emerges-best-steam-rating-decade/",
-   "stato": "aperto",
-   "titolo": "Call of Duty: Modern Warfare 4 ha la valutazione migliore dell'ultimo decennio nelle recensioni di Steam"
-  },
-  {
-   "data": "2026-10-18",
-   "etichetta": "🟢 LEAK AFFIDABILE",
-   "fonte": "Tom Henderson",
-   "id": "b20e7e",
-   "link": "https://insider-gaming.com/gray-zone-warfare-no-longer-mil-sim-gray-zone/",
-   "stato": "aperto",
-   "titolo": "Gray Zone Warfare is Becoming Much More Than Just a Mil-Sim"
-  },
-  {
-   "data": "2026-10-18",
-   "etichetta": "🟢 LEAK AFFIDABILE",
-   "fonte": "Tom Henderson",
-   "id": "c24318",
-   "link": "https://x.com/TeamVitality/status/2111573487751958809?ref_src=twsrc%5Etfw",
-   "stato": "aperto",
-   "titolo": "Team Vitality’s Paris HQ Looted and Trashed During Riots"
-  },
-  {
-   "data": "2026-10-18",
-   "etichetta": "🟡 RUMOR",
-   "fonte": "neogaf.com",
-   "id": "b60c9c",
-   "link": "https://www.neogaf.com/threads/keplerl2-ps6-is-40-tflops-and-helix-is-56-tflops-final-layouts-taped-out.1701752/page-36#post-272101878",
-   "stato": "aperto",
-   "titolo": "The PS6's memory and storage alone reportedly cost more than $680"
-  },
-  {
+   "alias": [
+    "A Halo extraction shooter was reportedly scrapped during the development of Campaign Evolved"
+   ],
    "data": "2026-10-18",
    "etichetta": "🟡 RUMOR",
    "fonte": "gamesradar.com",
    "id": "55f50c",
    "link": "https://www.gamesradar.com/games/halo/a-halo-extraction-shooter-and-battle-royale-hybrid-game-was-reportedly-scrapped-during-the-development-of-campaign-evolved/",
    "stato": "aperto",
-   "titolo": "A Halo extraction shooter was reportedly scrapped during the development of Campaign Evolved"
-  },
-  {
-   "data": "2026-10-18",
-   "etichetta": "🟡 RUMOR",
-   "fonte": "wccftech.com",
-   "id": "87a1cc",
-   "link": "https://wccftech.com/sonys-playstation-6-price-set-to-surpass-1000-ram-ssd-costs-680/",
-   "stato": "aperto",
-   "titolo": "The PlayStation 6 stands to be ludicrously expensive as its production cost alone reportedly approaches $1000"
+   "titolo": "Halo, un extraction shooter sarebbe stato cancellato durante lo sviluppo"
   }
  ]
 }
