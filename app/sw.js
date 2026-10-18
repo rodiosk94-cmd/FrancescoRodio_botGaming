@@ -1,5 +1,5 @@
 /* Radar: l'app si apre anche offline con gli ultimi dati scaricati. */
-const CACHE = 'radar-v1';
+const CACHE = 'radar-v2';
 const GUSCIO = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
@@ -15,12 +15,15 @@ self.addEventListener('activate', (ev) => {
 
 async function primaLaRete(req) {
   const cache = await caches.open(CACHE);
+  const u = new URL(req.url);
+  const chiave = u.origin + u.pathname; // radar.json?t=… e radar.json sono lo stesso file in cache
   try {
     const r = await fetch(req);
-    if (r.ok) cache.put(req, r.clone());
+    if (r.ok && req.mode !== 'navigate') cache.put(chiave, r.clone());
+    else if (r.ok) cache.put(req, r.clone());
     return r;
   } catch (e) {
-    const salvata = await cache.match(req, { ignoreSearch: true });
+    const salvata = (await cache.match(chiave)) || (await cache.match(req, { ignoreSearch: true }));
     if (salvata) return salvata;
     throw e;
   }

@@ -561,5 +561,6 @@ def estrai_dati_app(testo, n_max):
             "titolo": " ".join(str(d.get("titolo") or "").split())[:140],
             "riassunto": " ".join(str(d.get("riassunto") or "").split())[:900],
             "categoria": cat if cat in CATEGORIE else "",
+            "nel_report": d.get("nel_report") is not False,
         })
     return testo, voci or None

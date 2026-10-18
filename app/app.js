@@ -28,8 +28,19 @@
     condividi: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 14v5h14v-5"/></svg>',
     link: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></svg>',
     info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>',
+    aggiorna: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 21v-5h-5"/></svg>',
     stella: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>',
   };
+
+  const REPO = (() => {
+    const seg = location.pathname.split('/').filter(Boolean)[0];
+    if (location.hostname.endsWith('.github.io') && seg) return { owner: location.hostname.split('.')[0], nome: seg };
+    return { owner: 'rodiosk94-cmd', nome: 'FrancescoRodio_botGaming' };
+  })();
+  const API = `https://api.github.com/repos/${REPO.owner}/${REPO.nome}`;
+  const WORKFLOW = 'schedule.yml';
+  const PAGINA_WORKFLOW = `https://github.com/${REPO.owner}/${REPO.nome}/actions/workflows/${WORKFLOW}`;
+  const DURATA_MAX = 20 * 60 * 1000; // oltre, l'aggiornamento si considera perso
 
   const vista = document.getElementById('vista');
   const st = {
@@ -45,6 +56,9 @@
     set(k, v) { try { localStorage.setItem('radar.' + k, JSON.stringify(v)); } catch (e) { /* storage non disponibile */ } },
   };
   const seguiti = new Set(memoria.get('seguiti', []));
+  const agg = memoria.get('aggiornamento', {}); // aggiornamento manuale: sopravvive alla chiusura dell'app
+  const salvaAgg = () => memoria.set('aggiornamento', agg);
+  const attesa = (ms) => new Promise((ok) => setTimeout(ok, ms));
   function segui(id) {
     if (seguiti.has(id)) seguiti.delete(id); else seguiti.add(id);
     memoria.set('seguiti', [...seguiti]);
@@ -72,14 +86,116 @@
     if (!r.ok) { const e = new Error('HTTP ' + r.status); e.stato = r.status; throw e; }
     return r.json();
   }
+  function applica(dati) {
+    st.radar = dati;
+    st.caricato = Date.now();
+    st.report[dati.report.id] = dati.report;
+    st.indice = null;
+  }
   async function radar(forza) {
-    if (!st.radar || forza) {
-      st.radar = await scarica('data/radar.json');
-      st.caricato = Date.now();
-      st.report[st.radar.report.id] = st.radar.report;
-      st.indice = null;
-    }
+    if (!st.radar || forza) applica(await scarica('data/radar.json' + (forza ? `?t=${Date.now()}` : '')));
     return st.radar;
+  }
+
+  // ---------- aggiornamento manuale (GitHub Actions) ----------
+  async function gh(percorso, opz = {}) {
+    const r = await fetch(API + percorso, {
+      ...opz,
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${memoria.get('token', '')}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(opz.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+    });
+    if (!r.ok) throw Object.assign(new Error('HTTP ' + r.status), { stato: r.status });
+    return r.status === 204 ? null : r.json();
+  }
+  const inCorso = () => ['avvio', 'in_corso', 'pubblicazione'].includes(agg.stato) && Date.now() - agg.avviato < DURATA_MAX;
+  function erroreGh(e) {
+    if ([401, 403, 404].includes(e.stato)) return 'Il token non è valido o non ha il permesso Actions in lettura e scrittura.';
+    if (e.stato === 422) return 'GitHub ha rifiutato l\'avvio: controlla che il workflow abbia l\'opzione telegram.';
+    return 'Impossibile contattare GitHub. Controlla la connessione.';
+  }
+
+  async function avviaAggiornamento() {
+    if (!memoria.get('token', '')) { location.hash = '#/impostazioni'; return; }
+    if (inCorso()) return;
+    Object.assign(agg, { avviato: Date.now(), stato: 'avvio', run: null, msg: '', finito: null });
+    salvaAgg();
+    disegna(false);
+    try {
+      await gh(`/actions/workflows/${WORKFLOW}/dispatches`, {
+        method: 'POST',
+        body: JSON.stringify({ ref: 'main', inputs: { telegram: memoria.get('telegram', false) ? 'true' : 'false' } }),
+      });
+      agg.stato = 'in_corso';
+    } catch (e) {
+      agg.stato = 'errore';
+      agg.msg = erroreGh(e);
+    }
+    salvaAgg();
+    disegna(false);
+    seguiAggiornamento();
+  }
+
+  let inAscolto = false;
+  async function seguiAggiornamento() {
+    if (inAscolto || !inCorso()) return;
+    inAscolto = true;
+    try {
+      while (inCorso()) {
+        await attesa(15000);
+        if (agg.stato === 'in_corso') {
+          const d = await gh(`/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=5`);
+          const run = (d.workflow_runs || []).find((r) => new Date(r.created_at).getTime() >= agg.avviato - 60000);
+          if (run) {
+            agg.run = run.html_url;
+            if (run.status === 'completed') {
+              if (run.conclusion === 'success') agg.stato = 'pubblicazione';
+              else { agg.stato = 'errore'; agg.msg = 'Il bot si è fermato con un errore.'; }
+            }
+            salvaAgg();
+            disegna(false);
+          }
+        }
+        if (agg.stato === 'pubblicazione') {
+          const nuovo = await scarica(`data/radar.json?t=${Date.now()}`);
+          if (new Date(nuovo.aggiornato).getTime() >= agg.avviato - 60000) {
+            applica(nuovo);
+            Object.assign(agg, { stato: 'fatto', finito: Date.now() });
+            salvaAgg();
+            disegna(false);
+          }
+        }
+      }
+      if (['avvio', 'in_corso', 'pubblicazione'].includes(agg.stato)) {
+        Object.assign(agg, { stato: 'errore', msg: 'L\'aggiornamento non ha risposto entro 20 minuti.' });
+        salvaAgg();
+        disegna(false);
+      }
+    } catch (e) {
+      if (e.stato) { Object.assign(agg, { stato: 'errore', msg: erroreGh(e) }); salvaAgg(); disegna(false); }
+      // senza rete: si riprende quando l'app torna in primo piano
+    } finally {
+      inAscolto = false;
+    }
+  }
+
+  function bannerAggiornamento() {
+    const link = agg.run ? ` <a href="${esc(agg.run)}" target="_blank" rel="noopener">Dettagli</a>` : '';
+    if (inCorso()) {
+      const testo = agg.stato === 'pubblicazione' ? 'Quasi fatto: pubblico le notizie nuove…' : 'Aggiornamento in corso, di solito 3-5 minuti…';
+      return `<div class="banner attivo" role="status"><span>${testo}</span>${link}</div>`;
+    }
+    if (agg.stato === 'fatto' && Date.now() - agg.finito < 3 * 60 * 1000) {
+      return '<div class="banner ok" role="status"><span>Notizie aggiornate.</span><button class="link" data-azione="chiudi-agg">Chiudi</button></div>';
+    }
+    if (agg.stato === 'errore') {
+      return `<div class="banner errore" role="alert"><span>${esc(agg.msg)}${link}</span><button class="link" data-azione="chiudi-agg">Chiudi</button></div>`;
+    }
+    return '';
   }
   async function report(id) {
     const r = await radar();
@@ -122,6 +238,8 @@
     const notizie = tutte.filter((n) => filtro[2](n.etichetta)
       && (!st.categoria || n.categoria === st.categoria)
       && (!q || `${n.titolo} ${n.riassunto} ${n.fonte}`.toLowerCase().includes(q)));
+    const nelReport = notizie.filter((n) => n.in_report !== false);
+    const altre = notizie.filter((n) => n.in_report === false);
 
     const chips = FILTRI.map(([k, nome]) => `<button class="chip" data-azione="filtro" data-valore="${k}" aria-pressed="${st.filtro === k}">${nome}</button>`).join('');
     const chipsCat = categorie.length > 1
@@ -132,17 +250,23 @@
     return `
       <header class="testata">
         <div class="logo">${I.logo}<span>Radar</span></div>
+        <div class="azioni">
+        <button class="tondo${inCorso() ? ' gira' : ''}" data-azione="aggiorna" aria-label="${inCorso() ? 'Aggiornamento in corso' : 'Aggiorna le notizie'}" aria-disabled="${inCorso()}">${I.aggiorna}</button>
         <button class="tondo" data-azione="cerca" aria-label="${st.mostraCerca ? 'Chiudi la ricerca' : 'Cerca nel report'}" aria-expanded="${st.mostraCerca}">${st.mostraCerca ? I.chiudi : I.cerca}</button>
+        </div>
       </header>
       ${st.mostraCerca ? `<div class="cerca"><input id="campo-cerca" type="search" placeholder="Cerca nel report" aria-label="Cerca nel report" value="${esc(st.cerca)}" autocomplete="off"></div>` : ''}
       <div class="sotto"><strong>${esc(rep.titolo)}</strong><span class="meta">${esc(data(rep.generato))} · ${tutte.length} notizie</span></div>
       ${inArchivio ? `<div class="banner"><span>Report in archivio del ${esc(data(rep.generato, true))}</span><a href="#/notizie">Torna all'ultimo</a></div>` : ''}
       <div class="filtri" role="group" aria-label="Filtra per affidabilità">${chips}</div>
       ${chipsCat}
+      ${bannerAggiornamento()}
       <div class="lista">
-        ${notizie.length ? notizie.map((n) => scheda(n, rep.id)).join('') : '<p class="vuoto">Nessuna notizia con questi filtri.</p>'}
+        ${nelReport.length ? nelReport.map((n) => scheda(n, rep.id)).join('') : ''}
+        ${altre.length ? `<h2 class="sezione">Altre notizie dalle fonti · ${altre.length}</h2>${altre.map((n) => scheda(n, rep.id)).join('')}` : ''}
+        ${notizie.length ? '' : '<p class="vuoto">Nessuna notizia con questi filtri.</p>'}
       </div>
-      <p class="piede">Aggiornato il ${esc(data(r.aggiornato, true))}${inArchivio ? '' : ` · prossimo report alle ${prossimoReport()}`}</p>`;
+      <p class="piede">Aggiornato il ${esc(data(r.aggiornato, true))}${inArchivio ? '' : ` · prossimo report alle ${prossimoReport()}`}<br><a href="#/impostazioni">Impostazioni aggiornamento</a></p>`;
   }
 
   async function vistaNotizia(rid, nid) {
@@ -285,6 +409,56 @@
       <div class="lista">${corpo}</div>`;
   }
 
+  function vistaImpostazioni() {
+    const token = memoria.get('token', '');
+    return `
+      <div class="barra"><a class="tondo nudo" href="#/notizie" aria-label="Torna alle notizie">${I.indietro}</a><span></span><span style="width: 44px"></span></div>
+      <h1 class="titolo">Aggiornamento manuale</h1>
+      <p class="intro">Il pulsante Aggiorna avvia il bot su GitHub: in 3-5 minuti l'app mostra le notizie nuove. Serve un token GitHub, che resta salvato solo su questo dispositivo.</p>
+      <section class="blocco" style="margin-top: 16px">
+        <h2>Come creare il token</h2>
+        <ol class="passi">
+          <li>Apri <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">la pagina dei token di GitHub</a>.</li>
+          <li>In <b>Repository access</b> scegli <b>Only select repositories</b> e seleziona ${esc(REPO.nome)}.</li>
+          <li>In <b>Permissions → Repository permissions</b> imposta <b>Actions</b> su <b>Read and write</b>.</li>
+          <li>Premi <b>Generate token</b>, copialo e incollalo qui sotto.</li>
+        </ol>
+      </section>
+      <section class="blocco" style="margin-top: 12px">
+        <h2>Token</h2>
+        ${token ? `<p class="nota">Token salvato: ••••${esc(token.slice(-4))}</p>` : ''}
+        <label class="campo" for="campo-token">${token ? 'Sostituisci il token' : 'Incolla il token'}</label>
+        <input id="campo-token" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+        <div class="riga" style="justify-content: flex-start; gap: 10px; flex-wrap: wrap">
+          <button class="bottone" data-azione="salva-token">Salva</button>
+          ${token ? '<button class="bottone secondario" data-azione="rimuovi-token">Rimuovi</button>' : ''}
+        </div>
+        <p class="nota" id="esito-token" role="status">${esc(st.esitoToken || '')}</p>
+      </section>
+      <section class="blocco" style="margin-top: 12px">
+        <label class="spunta"><input type="checkbox" id="campo-telegram" ${memoria.get('telegram', false) ? 'checked' : ''}>
+          <span><b>Invia anche il report su Telegram</b><br>Se attivo, l'aggiornamento manda il messaggio e aggiorna lo storico dei leak. Se spento aggiorna solo l'app.</span></label>
+      </section>
+      <p class="piede"><a href="${esc(PAGINA_WORKFLOW)}" target="_blank" rel="noopener">Avvia il bot a mano da GitHub</a></p>`;
+  }
+
+  async function salvaToken() {
+    const campo = document.getElementById('campo-token');
+    const valore = (campo && campo.value || '').trim();
+    if (!valore) { st.esitoToken = 'Incolla prima il token.'; return; }
+    const precedente = memoria.get('token', '');
+    memoria.set('token', valore);
+    st.esitoToken = 'Controllo il token…';
+    disegna(false);
+    try {
+      await gh(`/actions/workflows/${WORKFLOW}`);
+      st.esitoToken = 'Token salvato e valido. Ora puoi usare il pulsante Aggiorna.';
+    } catch (e) {
+      memoria.set('token', precedente);
+      st.esitoToken = erroreGh(e);
+    }
+  }
+
   // ---------- navigazione ----------
   function rotta() {
     const parti = location.hash.replace(/^#\/?/, '').split('/').map((p) => { try { return decodeURIComponent(p); } catch (e) { return ''; } });
@@ -295,6 +469,7 @@
       case 'leak': return { tab: 'leak', fn: vistaLeak };
       case 'insider': return { tab: 'insider', fn: vistaInsider };
       case 'archivio': return { tab: 'archivio', fn: vistaArchivio };
+      case 'impostazioni': return { tab: 'notizie', fn: vistaImpostazioni };
       default: return { tab: 'notizie', fn: () => vistaNotizie() };
     }
   }
@@ -343,6 +518,10 @@
         if (st.mostraCerca) { const c = document.getElementById('campo-cerca'); if (c) c.focus(); }
         return;
       case 'riprova': st.radar = null; break;
+      case 'aggiorna': avviaAggiornamento(); return;
+      case 'chiudi-agg': agg.stato = null; salvaAgg(); break;
+      case 'salva-token': await salvaToken(); break;
+      case 'rimuovi-token': memoria.set('token', ''); st.esitoToken = 'Token rimosso da questo dispositivo.'; break;
       case 'condividi': {
         const titolo = (vista.querySelector('h1') || {}).textContent || 'Radar';
         try {
@@ -355,13 +534,18 @@
     }
     disegna(false);
   });
+  vista.addEventListener('change', (ev) => {
+    if (ev.target.id === 'campo-telegram') memoria.set('telegram', ev.target.checked);
+  });
   vista.addEventListener('input', (ev) => {
     if (ev.target.id === 'campo-cerca') { st.cerca = ev.target.value; disegna(false); }
     if (ev.target.id === 'cerca-archivio') { st.cercaArchivio = ev.target.value; disegna(false); }
   });
   window.addEventListener('hashchange', () => disegna(true));
   document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState !== 'visible' || Date.now() - st.caricato < 10 * 60 * 1000) return;
+    if (document.visibilityState !== 'visible') return;
+    seguiAggiornamento();
+    if (Date.now() - st.caricato < 10 * 60 * 1000) return;
     try { await radar(true); disegna(false); } catch (e) { /* offline: restano i dati già caricati */ }
   });
 
@@ -369,4 +553,5 @@
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }
   disegna(true);
+  seguiAggiornamento(); // riprende un aggiornamento avviato prima di chiudere l'app
 })();

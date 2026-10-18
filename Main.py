@@ -109,7 +109,7 @@ FEEDS = {
 # Report alle 06:00 (copre la notte, 10 ore) e alle 20:00 (copre la giornata, 14 ore), ora italiana
 ora_it = datetime.now(ZoneInfo("Europe/Rome")).hour
 ORE = 10 if 3 <= ora_it < 12 else 14
-MAX_PER_FEED = 6     # voci massime per feed
+MAX_PER_FEED = 10    # voci massime per feed
 MAX_COMMUNITY = 20   # voci massime per feed Reddit/ResetEra
 MAX_ARTICOLI = 40    # articoli da aprire per cercare dichiarazioni (scelti a turno tra le testate)
 MAX_CIT = 3          # paragrafi con dichiarazioni per articolo
@@ -368,7 +368,9 @@ for (area, url), voci in zip(lavori, esiti):
         if chiavi & visti:
             continue
         visti |= chiavi
-        if STATO.gia_inviato(v["link"]):  # già nel report precedente (es. top del giorno di Reddit)
+        # già nel report precedente (es. top del giorno di Reddit). Nell'aggiornamento solo-app le teniamo:
+        # servono a mostrare in Radar tutte le notizie della finestra
+        if INVIA_TELEGRAM and STATO.gia_inviato(v["link"]):
             gia_inviate += 1
             continue
         v["area"], v["feed"] = area, url
@@ -495,10 +497,14 @@ prompt = (
     "se sono in inglese traducile in italiano indicando '(trad.)'. Se una notizia non ha citazioni, "
     "non aggiungerne.\n"
     "DATI PER L'APP: dopo il report (e prima dell'eventuale riga CONFERMATI) aggiungi un blocco di codice "
-    "```json con un array, un oggetto per ogni notizia trattata nel report, nello stesso ordine: "
+    "```json con un array: PRIMA un oggetto per ogni notizia trattata nel report, nello stesso ordine, "
+    "POI un oggetto per ciascuna delle altre NOTIZIA della lista che riguardano i videogiochi (escluse quelle "
+    "💬 COMMUNITY, le offerte e le recensioni di prodotti). Formato: "
     "{\"notizie\": [i numeri delle NOTIZIA che hai usato, es. [4, 7] se le hai unite], "
+    "\"nel_report\": true se l'hai trattata nel report, altrimenti false, "
     "\"titolo\": \"titolo in italiano, massimo 90 caratteri\", "
-    "\"riassunto\": \"2-3 frasi in italiano, solo fatti presenti nelle fonti, al condizionale per i rumor\", "
+    "\"riassunto\": \"in italiano, solo fatti presenti nelle fonti, al condizionale per i rumor: 2-3 frasi "
+    "per le notizie del report, una frase per le altre\", "
     "\"categoria\": una tra \"PlayStation\", \"Xbox\", \"Nintendo\", \"PC\", \"Multipiattaforma\", "
     "\"Industria\", \"Hardware\", \"Mobile\", \"Altro\"}. Niente link e niente testo dopo il blocco, "
     "a parte la riga CONFERMATI se richiesta."
@@ -637,11 +643,8 @@ def send_chunk(chunk: str) -> None:
         sys.exit(f"Invio Telegram fallito ({r.status_code}): {r.text}")
 
 
-voci_app = radar.componi(notizie, meta_app, STATO)  # notizie come le mostra Radar
 usati = {norm_link(u) for u in fonti.link_nel_testo(article_text)}
-if not meta_app:  # senza i dati di Gemini, nell'app vanno le notizie finite nel report (o tutte, se non c'è)
-    nel_report = [e for e in voci_app if any(norm_link(u) in usati for u in e["_links"])]
-    voci_app = nel_report or voci_app
+voci_app = radar.componi(notizie, meta_app, STATO, usati)  # notizie come le mostra Radar
 if RADAR_URL:
     article_text = article_text.rstrip() + f"\n\n[📡 Apri il report in Radar]({RADAR_URL})\n"
 
@@ -658,7 +661,7 @@ nuovi = 0
 for e in voci_app:
     if e["_etichetta"] not in (fonti.AFFIDABILE, fonti.RUMOR):
         continue
-    if INVIA_TELEGRAM and response is not None:
+    if INVIA_TELEGRAM and response is not None and e["in_report"]:  # nel tracker solo i leak del report
         lid, nuovo = STATO.registra_leak(e["titolo"], e["_fonte_principale"], e["_url_origine"],
                                          e["_etichetta"], adesso, e["_links"])
         nuovi += nuovo

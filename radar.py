@@ -129,18 +129,30 @@ def _combina(gruppi, meta, stato):
     }
 
 
-def componi(notizie, meta, stato):
-    """Notizie per l'app: quelle trattate nel report (meta da Gemini) o, senza meta, un gruppo ciascuna."""
-    if not meta:
-        return [_combina([n], None, stato) for n in notizie]
-    out, usati = [], set()
-    for m in meta:
-        idx = [k - 1 for k in m["notizie"] if k - 1 not in usati and k - 1 < len(notizie)]
+def componi(notizie, meta, stato, usati=()):
+    """Notizie per l'app: prima quelle del report (nell'ordine di Gemini), poi le altre raccolte.
+
+    `usati` sono i link finiti nel messaggio: servono a capire cosa era nel report quando Gemini
+    non ha restituito i dati per l'app. I gruppi solo-community restano fuori."""
+    out, presi = [], set()
+    for m in meta or []:
+        idx = [k - 1 for k in m["notizie"] if k - 1 not in presi and k - 1 < len(notizie)]
         if not idx:
             continue
-        usati.update(idx)
-        out.append(_combina([notizie[i] for i in idx], m, stato))
-    return out
+        presi.update(idx)
+        e = _combina([notizie[i] for i in idx], m, stato)
+        e["in_report"] = m.get("nel_report", True)
+        out.append(e)
+    for i, n in enumerate(notizie):
+        if i in presi or n["etichetta"] == fonti.SOLO_COMMUNITY:
+            continue
+        e = _combina([n], None, stato)
+        e["in_report"] = not meta and any(norm_link(u) in usati for u in e["_links"])
+        out.append(e)
+    # nel report l'ordine di Gemini; le altre per affidabilità
+    report = [e for e in out if e["in_report"]]
+    altre = sorted((e for e in out if not e["in_report"]), key=lambda e: fonti.ORDINE.index(e["_etichetta"]))
+    return report + altre
 
 
 def _pubblico(e):

@@ -183,3 +183,27 @@ a.scheda:active { background: var(--superficie-2); }
 .report { display: flex; flex-direction: column; gap: 8px; }
 .report ol { margin: 0; padding-left: 18px; color: var(--testo-2); font-size: 14px; line-height: 1.45; }
 .conteggi { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ---------- aggiornamento manuale e impostazioni ---------- */
+.azioni { display: flex; gap: 8px; }
+.tondo[aria-disabled="true"] { cursor: default; color: var(--accento); }
+.gira svg { animation: gira 1.1s linear infinite; }
+@keyframes gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .gira svg { animation: none; } }
+.banner.attivo { border-color: #1F5A3A; background: #0F1D15; }
+.banner.ok { border-color: #1F5A3A; background: #0F1D15; color: var(--ok-fg); }
+.banner.errore { border-color: #5A2A22; background: #1E1412; }
+.banner span a { margin-left: 6px; }
+button.link { border: 0; background: none; padding: 8px 0 8px 8px; color: var(--accento); font-weight: 700; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.lista .sezione { margin: 14px 4px 2px; }
+.piede a { color: var(--accento); text-transform: none; letter-spacing: 0; font-family: var(--sans); font-size: 13px; font-weight: 600; display: inline-block; padding: 10px 0; }
+.passi { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.45; color: var(--testo-2); }
+.passi a { color: var(--accento); text-decoration: underline; text-underline-offset: 3px; }
+.passi b { color: var(--testo); }
+.nota { margin: 0; font-size: 13px; color: var(--tenue); line-height: 1.45; }
+.nota:empty { display: none; }
+.campo { font-size: 14px; font-weight: 600; }
+.input { width: 100%; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--bordo-forte); background: var(--sfondo); color: var(--testo); font-family: var(--mono); font-size: 14px; }
+.spunta { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: var(--testo-2); cursor: pointer; }
+.spunta b { color: var(--testo); font-size: 14px; }
+.spunta input { width: 22px; height: 22px; margin: 1px 0 0; flex: none; accent-color: var(--accento); }
