@@ -51,7 +51,10 @@ def catena(voci, info):
              "testata": "Origine · prima fonte"}
     origini = _origini_vere(voci, info)
     for o in origini:
-        aggiungi(_nome(o["chiave"]), ruoli[o["tipo"]], o["url"], "origine")
+        ruolo = ruoli[o["tipo"]]
+        if o["tipo"] == "insider" and o["chiave"] not in INSIDER:  # account X/Bluesky qualsiasi (es. uno sviluppatore)
+            ruolo = "Origine · post social"
+        aggiungi(_nome(o["chiave"]), ruolo, o["url"], "origine")
     for v in voci:
         if v.get("autore"):
             aggiungi(v["autore"], "Post diretto su Bluesky", v["link"], "origine")
