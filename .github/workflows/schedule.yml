@@ -2,9 +2,10 @@ name: Automated Gaming News Agent
 
 on:
   schedule:
-    # Orari in UTC. Con l'ora legale: 04:00 e 18:00 UTC = 06:00 e 20:00 in Italia.
-    # Dal 25 ottobre (ora solare) cambia in: '0 5,19 * * *'
-    - cron: '0 4,18 * * *'
+    # Orari in UTC, uno per l'ora legale e uno per la solare: il passo "Check Italian time"
+    # lascia proseguire solo quello giusto, così il report esce sempre alle 06:00 e alle 20:00 italiane.
+    - cron: '0 4,18 * * *' # ora legale (UTC+2)
+    - cron: '0 5,19 * * *' # ora solare (UTC+1)
   workflow_dispatch: # Permette di avviare l'automazione manualmente con un pulsante
 
 permissions:
@@ -19,19 +20,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20 # interrompe il job se si blocca, per non consumare minuti
     steps:
+      # Decide in base al cron che ha avviato la run (non all'ora attuale), così un ritardo
+      # di GitHub nell'avvio non fa saltare il report.
+      - name: Check Italian time
+        id: orario
+        env:
+          CRON: ${{ github.event.schedule }}
+        run: |
+          OFFSET=$(TZ=Europe/Rome date +%z)
+          if [ -z "$CRON" ]; then
+            echo "Avvio manuale: procedo"; echo "vai=true" >> "$GITHUB_OUTPUT"
+          elif { [ "$CRON" = "0 4,18 * * *" ] && [ "$OFFSET" = "+0200" ]; } || \
+               { [ "$CRON" = "0 5,19 * * *" ] && [ "$OFFSET" = "+0100" ]; }; then
+            echo "Cron '$CRON' corretto per l'offset $OFFSET: procedo"; echo "vai=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Cron '$CRON' non è quello giusto con l'offset $OFFSET: salto"; echo "vai=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
+        if: steps.orario.outputs.vai == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: steps.orario.outputs.vai == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
+        if: steps.orario.outputs.vai == 'true'
         run: |
           pip install google-genai requests
 
       - name: Run News Generator
+        if: steps.orario.outputs.vai == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -39,6 +61,7 @@ jobs:
         run: python -u Main.py # -u = log in tempo reale
 
       - name: Save history
+        if: steps.orario.outputs.vai == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
