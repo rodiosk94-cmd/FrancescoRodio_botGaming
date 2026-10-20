@@ -1,10 +1,20 @@
 {
- "fonti": {},
+ "fonti": {
+  "gamingbolt.com": {
+   "confermati": 1,
+   "non_confermati": 0
+  },
+  "neogaf.com": {
+   "confermati": 1,
+   "non_confermati": 0
+  }
+ },
  "inviati": {
   "https://apply.careers.microsoft.com/careers/job/1970393557024776": "2026-10-19T04:29+00:00",
   "https://gamesbeat.com/grand-theft-auto-vis-pc-release-is-slated-for-q1-2027": "2026-10-18T11:15+00:00",
   "https://gamingbolt.com/beast-of-reincarnations-last-update-is-targeting-october-19th": "2026-10-19T04:29+00:00",
   "https://gamingbolt.com/ps6s-ram-and-nand-is-over-680-total-cost-could-exceed-1000-rumor": "2026-10-19T04:29+00:00",
+  "https://gamingbolt.com/star-wars-battlefront-3-could-end-up-developed-by-bungie-rumor": "2026-10-20T04:25+00:00",
   "https://insider-gaming.com/gray-zone-warfare-no-longer-mil-sim-gray-zone": "2026-10-18T18:20+00:00",
   "https://insider-gaming.com/modern-warfare-4-emerges-best-steam-rating-decade": "2026-10-18T18:20+00:00",
   "https://insider-gaming.com/team-vitality-paris-hq-looted-trashed-riots": "2026-10-18T18:20+00:00",
@@ -20,9 +30,13 @@
   "https://multiplayer.it/notizie/xbox-cerca-uno-stratega-della-distribuzione-di-giochi-fisici-helix-supportera-i-dischi.html": "2026-10-18T18:20+00:00",
   "https://store.steampowered.com/app/2600/vampire_the_masquerade__bloodlines": "2026-10-18T11:15+00:00",
   "https://store.steampowered.com/news/app/2001760/view/679637761984037553": "2026-10-19T04:29+00:00",
+  "https://store.steampowered.com/news/app/294100/view/672882362547178633": "2026-10-20T04:25+00:00",
+  "https://store.steampowered.com/news/app/3295000/view/693149194510140840": "2026-10-20T04:25+00:00",
   "https://store.steampowered.com/news/app/4150720/view/746066581090468248": "2026-10-19T04:29+00:00",
   "https://store.steampowered.com/news/app/5085740/view/716793092553835480": "2026-10-18T18:20+00:00",
   "https://store.steampowered.com/news/group/42342144": "2026-10-18T18:20+00:00",
+  "https://thegamepost.com/star-wars-battlefront-3-developed-destiny-2-maker-bungie": "2026-10-20T04:25+00:00",
+  "https://twistedvoxel.com/disney-in-talks-with-bungie-dice-to-work-on-star-wars-battlefront-3": "2026-10-20T04:25+00:00",
   "https://wccftech.com/ps6-bom-nears-1000-delay-unlikely": "2026-10-18T18:20+00:00",
   "https://wccftech.com/sonys-playstation-6-price-set-to-surpass-1000-ram-ssd-costs-680": "2026-10-18T18:20+00:00",
   "https://wccftech.com/xbox-4-percent-us-physical-game-sales-microsoft-job-ad-helix-discs": "2026-10-18T18:20+00:00",
@@ -32,15 +46,19 @@
   "https://www.destructoid.com/xbox-helix-could-support-discs": "2026-10-18T18:20+00:00",
   "https://www.dreadcentral.com/gaming/593586/clive-barker-hellraiser-revival-approval-interview": "2026-10-19T04:29+00:00",
   "https://www.eurogamer.net/liquid-swords-samson-developer-bankrupt": "2026-10-18T18:20+00:00",
+  "https://www.eurogamer.net/moonlighter-dev-steam-playtest-revamp-ai-copycats": "2026-10-20T04:25+00:00",
   "https://www.eurogamer.net/ps6-ram-nand-costs-over-680-keplerl2": "2026-10-18T18:20+00:00",
   "https://www.everyeye.it/notizie/gta-vice-city-pessimo-ray-liotta-salvato-906641.html": "2026-10-18T11:15+00:00",
   "https://www.everyeye.it/notizie/xbox-helix-avra-lettore-dischi-microsoft-cerca-esperti-giochi-fisici-906691.html": "2026-10-19T04:29+00:00",
+  "https://www.gamedeveloper.com/programming/rocketwerkz-c-framework-brutal-is-now-available-for-all-developers": "2026-10-20T04:25+00:00",
   "https://www.gamesource.it/notizie/call-of-duty-modern-warfare-4-recensioni": "2026-10-18T18:20+00:00",
   "https://www.gamesource.it/notizie/call-of-duty-modern-warfare-4-switch-2": "2026-10-18T18:20+00:00",
   "https://www.gamespark.jp/article/2026/10/16/173695.html": "2026-10-18T18:20+00:00",
   "https://www.gamesradar.com/games/halo/a-halo-extraction-shooter-and-battle-royale-hybrid-game-was-reportedly-scrapped-during-the-development-of-campaign-evolved": "2026-10-18T18:20+00:00",
   "https://www.gamesradar.com/games/horror/the-physical-element-of-gaming-will-always-always-be-there-bloober-team-and-broken-mirror-games-want-to-make-physical-media-for-as-long-as-possible": "2026-10-18T18:20+00:00",
+  "https://www.gamesradar.com/games/red-dead/red-dead-redemption-2-gets-a-shadow-of-mordor-style-nemesis-system-in-massive-new-mod-where-everyone-you-cross-in-the-west-can-become-your-nemesis": "2026-10-20T04:25+00:00",
   "https://www.gamesradar.com/games/silent-hill/konami-wants-silent-hill-to-have-an-annual-release-of-new-games-and-its-already-working-on-many-unannounced-projects": "2026-10-18T18:20+00:00",
+  "https://www.gematsu.com/2026/10/monster-hunter-wilds-prologue-demo-for-switch-2-launches-october-19": "2026-10-20T04:25+00:00",
   "https://www.gog.com/en/game/vampire_the_masquerade_bloodlines": "2026-10-18T11:15+00:00",
   "https://www.ign.com/articles/battlefield-6-devs-respond-after-players-take-aim-at-secuty-typo-and-cosmetic-with-5-pistols": "2026-10-18T11:15+00:00",
   "https://www.ign.com/articles/dev-behind-russian-roulette-drinking-game-cancels-steam-demo-plans-following-ai-copycat-concerns": "2026-10-18T11:15+00:00",
@@ -52,10 +70,14 @@
   "https://www.pcgamer.com/games/horror/clive-barker-says-hes-genuinely-astonished-by-hellraiser-revival-im-proud-as-f-k-at-the-end-result": "2026-10-19T04:29+00:00",
   "https://www.pcgamer.com/games/rpg/metal-band-genitorturers-allegedly-claims-a-vampire-the-masquerade-bloodlines-remake-is-coming-getting-a-dozen-crusty-nerds-way-too-worked-up": "2026-10-18T11:15+00:00",
   "https://www.pcgamer.com/gaming-industry/liquid-swords-developer-of-open-city-crime-sim-samson-has-gone-bankrupt-following-staff-claims-that-they-havent-been-paid-in-two-months": "2026-10-18T18:20+00:00",
+  "https://www.pcgamer.com/gaming-industry/moonlighter-studio-wont-host-a-public-playtest-of-its-next-game-due-to-rampant-ai-led-cloning-we-know-were-not-the-only-developers-feeling-this-way": "2026-10-20T04:25+00:00",
   "https://www.pcgamer.com/gaming-industry/steam-week-in-review-steam-next-fest-has-over-8-000-demos-as-worthless-vibe-coded-slop-levels-up": "2026-10-19T04:29+00:00",
   "https://www.polygon.com/drunken-goddess-reflux-demo-canceled": "2026-10-18T18:20+00:00",
   "https://www.polygon.com/gta-5-leak-gta-6-reddit-vine-reactions-ban-sony-rockstar-response": "2026-10-18T11:15+00:00",
+  "https://www.polygon.com/red-dead-redemption-2-nemesis-system-mod-shadow-of-mordor": "2026-10-20T04:25+00:00",
+  "https://www.polygon.com/star-wars-battlefront-3-rumor-bungie-dice-disney": "2026-10-20T04:25+00:00",
   "https://www.purexbox.com/features/im-playing-samson-on-xbox-series-x-and-heres-what-i-think-so-far": "2026-10-18T18:20+00:00",
+  "https://www.pushsquare.com/news/2026/10/could-sonys-bungie-build-the-next-star-wars-battlefront-game": "2026-10-20T04:25+00:00",
   "https://www.pushsquare.com/news/2026/10/ps6-price-tag-facing-usd1000plus-nightmare-as-ai-data-centres-send-component-costs-soaring": "2026-10-18T11:15+00:00",
   "https://www.reddit.com/r/games/comments/1x9eknc/clive_barker_was_astonished_by_how_far_hellraiser": "2026-10-19T04:29+00:00",
   "https://www.reddit.com/r/gamingleaksandrumours/comments/1x9ba6z/new_job_listing_suggests_that_xbox_may_be_looking": "2026-10-19T04:29+00:00",
@@ -105,11 +127,12 @@
     "PS6 Price Tag Facing $1,000+ Nightmare as AI Data Centres Send Component Costs Soaring"
    ],
    "data": "2026-10-18",
+   "data_esito": "2026-10-20",
    "etichetta": "🟡 RUMOR",
    "fonte": "neogaf.com",
    "id": "a31473",
    "link": "https://www.neogaf.com/threads/keplerl2-ps6-is-40-tflops-and-helix-is-56-tflops-final-layouts-taped-out.1701752/page-36#post-272101878",
-   "stato": "aperto",
+   "stato": "confermato",
    "titolo": "PS6, il prezzo potrebbe superare i 1000 dollari"
   },
   {
@@ -138,11 +161,12 @@
   },
   {
    "data": "2026-10-19",
+   "data_esito": "2026-10-20",
    "etichetta": "🟡 RUMOR",
    "fonte": "gamingbolt.com",
    "id": "2dcd0b",
    "link": "https://gamingbolt.com/ps6s-ram-and-nand-is-over-680-total-cost-could-exceed-1000-rumor",
-   "stato": "aperto",
+   "stato": "confermato",
    "titolo": "PlayStation 6, rumor sui costi di produzione: BOM oltre i 1.000 dollari"
   },
   {
@@ -153,6 +177,15 @@
    "link": "https://apply.careers.microsoft.com/careers/job/1970393557024776",
    "stato": "aperto",
    "titolo": "Microsoft assume uno stratega per la distribuzione dei giochi fisici Xbox"
+  },
+  {
+   "data": "2026-10-20",
+   "etichetta": "🟢 LEAK AFFIDABILE",
+   "fonte": "Jeff Grubb",
+   "id": "80507b",
+   "link": "https://x.com/SWBFUpdates/status/2112249036094988600",
+   "stato": "aperto",
+   "titolo": "Possibili trattative tra Disney e Bungie o DICE per Star Wars Battlefront 3"
   }
  ]
 }
