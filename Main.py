@@ -133,6 +133,15 @@ MODELLI = [  # in ordine di preferenza; le versioni Lite hanno una capacità sep
 ]
 GIRI = 2            # quante volte scorrere tutta la lista prima di arrendersi
 PAUSA_GIRO = 60     # secondi di attesa tra un giro e l'altro
+TIMEOUT_GEMINI = 90         # secondi massimi per una singola chiamata (senza, un modello bloccato tiene fermo il job)
+BUDGET_GEMINI = 600         # secondi massimi per tutta la fase Gemini, giri e pause compresi
+
+_T0 = time.monotonic()
+
+
+def fase(nome):
+    """Log dei tempi: dopo quanti secondi dall'avvio inizia/finisce ogni fase."""
+    print(f"[tempi] {nome}: {time.monotonic() - _T0:.0f}s dall'avvio", flush=True)
 
 
 def _local(tag):
@@ -528,10 +537,19 @@ if SOLO_FEED:
     sys.exit(0)
 
 # 3. Chiamata a Gemini: scorre i modelli a giri (503 = sovraccarico temporaneo)
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+fase("raccolta fonti finita, inizio Gemini")
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"],
+                      http_options=types.HttpOptions(timeout=TIMEOUT_GEMINI * 1000))  # millisecondi
 response = None
+_inizio_gemini = time.monotonic()
+_fuori_budget = False
 for giro in range(GIRI):
     for modello in MODELLI:
+        if time.monotonic() - _inizio_gemini > BUDGET_GEMINI:
+            print(f"Budget Gemini di {BUDGET_GEMINI}s esaurito: mi fermo")
+            _fuori_budget = True
+            break
+        _t = time.monotonic()
         try:
             response = client.models.generate_content(
                 model=modello,
@@ -541,18 +559,22 @@ for giro in range(GIRI):
         except errors.APIError as e:
             if e.code not in (404, 429, 500, 503):  # errori di configurazione: stop subito
                 raise
-            print(f"[{modello}] errore {e.code}, provo il modello successivo")
+            print(f"[{modello}] errore {e.code} dopo {time.monotonic() - _t:.0f}s, provo il modello successivo")
+            continue
+        except Exception as e:  # timeout o rete: non blocco il job, passo al modello dopo
+            print(f"[{modello}] {type(e).__name__} dopo {time.monotonic() - _t:.0f}s, provo il modello successivo")
             continue
         if response.text:
-            print(f"Report generato con {modello}")
+            print(f"Report generato con {modello} in {time.monotonic() - _t:.0f}s")
             break
         print(f"[{modello}] risposta vuota, provo il modello successivo")
         response = None
-    if response is not None:
+    if response is not None or _fuori_budget:
         break
     if giro < GIRI - 1:
         print(f"Nessun modello disponibile, nuovo giro tra {PAUSA_GIRO}s")
         time.sleep(PAUSA_GIRO)
+fase("Gemini finito")
 
 adesso = fonti.ora_utc()
 confermati = []
@@ -597,6 +619,7 @@ else:
     article_text = "\n".join(righe)
 
 # 4. Invio a Telegram
+fase("inizio invio Telegram")
 bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
 chat_id = os.environ["TELEGRAM_CHAT_ID"]
 TG_URL = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -678,3 +701,4 @@ if INVIA_TELEGRAM:
     STATO.pulizia(adesso)
     STATO.salva()
 print(f"Radar: report {radar.scrivi(voci_app, STATO, adesso, ORE)} con {len(voci_app)} notizie")
+fase("fine")
