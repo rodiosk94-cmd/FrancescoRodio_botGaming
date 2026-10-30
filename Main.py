@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import time
+import traceback
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -107,8 +108,43 @@ FEEDS = {
     ],
 }
 # Report alle 06:00 (copre la notte, 10 ore) e alle 20:00 (copre la giornata, 14 ore), ora italiana
-ora_it = datetime.now(ZoneInfo("Europe/Rome")).hour
-ORE = 10 if 3 <= ora_it < 12 else 14
+ROMA = ZoneInfo("Europe/Rome")
+_adesso_roma = datetime.now(ROMA)
+ora_it = _adesso_roma.hour
+ORE_BASE = 10 if 3 <= ora_it < 12 else 14
+ORE_MAX = 36  # dopo run saltate o fallite si recupera al massimo un giorno e mezzo di notizie
+
+
+def _ultimo_report():
+    try:
+        return datetime.fromisoformat(STATO.ultimo_report) if STATO.ultimo_report else None
+    except ValueError:
+        return None
+
+
+def _slot_corrente(adesso):
+    """L'ultimo orario di report (06:00 o 20:00 italiane) già passato."""
+    for h in (20, 6):
+        s = adesso.replace(hour=h, minute=0, second=0, microsecond=0)
+        if s <= adesso:
+            return s
+    return (adesso - timedelta(days=1)).replace(hour=20, minute=0, second=0, microsecond=0)
+
+
+_ultimo = _ultimo_report()
+# Run del cron di GitHub (spesso in ritardo di ore): se il report di questo turno è già uscito,
+# avviato da un trigger esterno puntuale o da una run precedente, non ne mando un secondo.
+if os.environ.get("DA_CRON") == "1" and _ultimo and _ultimo >= _slot_corrente(_adesso_roma) - timedelta(minutes=30):
+    print(f"Report del turno delle {_slot_corrente(_adesso_roma):%H:%M} già inviato "
+          f"({_ultimo.astimezone(ROMA):%d/%m %H:%M}): niente da fare")
+    sys.exit(0)
+# Finestra: dall'ultimo report riuscito (così una run saltata o in ritardo non perde notizie),
+# mai meno della finestra normale e mai più di ORE_MAX
+ORE = ORE_BASE
+if _ultimo:
+    ORE = min(max(ORE_BASE, int((_adesso_roma - _ultimo).total_seconds() // 3600) + 1), ORE_MAX)
+print(f"Finestra notizie: ultime {ORE} ore"
+      + (f" (ultimo report: {_ultimo.astimezone(ROMA):%d/%m %H:%M})" if _ultimo else ""))
 MAX_PER_FEED = 10    # voci massime per feed
 MAX_COMMUNITY = 20   # voci massime per feed Reddit/ResetEra
 MAX_ARTICOLI = 40    # articoli da aprire per cercare dichiarazioni (scelti a turno tra le testate)
@@ -133,8 +169,9 @@ MODELLI = [  # in ordine di preferenza; le versioni Lite hanno una capacità sep
 ]
 GIRI = 2            # quante volte scorrere tutta la lista prima di arrendersi
 PAUSA_GIRO = 60     # secondi di attesa tra un giro e l'altro
-TIMEOUT_GEMINI = 90         # secondi massimi per una singola chiamata (senza, un modello bloccato tiene fermo il job)
-BUDGET_GEMINI = 600         # secondi massimi per tutta la fase Gemini, giri e pause compresi
+TIMEOUT_GEMINI = 150        # secondi massimi per una singola chiamata (senza, un modello bloccato tiene fermo il job;
+                            # 90s rischiava di troncare un report lungo che stava arrivando)
+BUDGET_GEMINI = 660         # secondi massimi per tutta la fase Gemini, giri e pause compresi (job: 20 minuti)
 
 _T0 = time.monotonic()
 
@@ -557,9 +594,13 @@ for giro in range(GIRI):
                 config=types.GenerateContentConfig(system_instruction=system_instruction),
             )
         except errors.APIError as e:
-            if e.code not in (404, 429, 500, 503):  # errori di configurazione: stop subito
+            # chiave non valida o progetto senza accesso: inutile provare gli altri modelli.
+            # Tutto il resto (400 di un singolo modello, 404, 429, 5xx, 504 DEADLINE_EXCEEDED…) → modello dopo:
+            # prima un 504 o un 400 di un solo modello faceva fallire l'intera run.
+            if e.code in (401, 403) or (e.code == 400 and "API key" in str(e)):
                 raise
-            print(f"[{modello}] errore {e.code} dopo {time.monotonic() - _t:.0f}s, provo il modello successivo")
+            print(f"[{modello}] errore {e.code} dopo {time.monotonic() - _t:.0f}s, provo il modello successivo: "
+                  f"{str(e)[:200]}")
             continue
         except Exception as e:  # timeout o rete: non blocco il job, passo al modello dopo
             print(f"[{modello}] {type(e).__name__} dopo {time.monotonic() - _t:.0f}s, provo il modello successivo")
@@ -590,9 +631,12 @@ if response is not None:
     # conferme dei leak passati: quelle segnalate da Gemini (solo id esistenti) + somiglianza
     # diretta con i titoli delle notizie ufficiali di oggi
     aperti_ids = {l["id"] for l in STATO.leak_aperti()}
-    ids = [i for i in ids if i in aperti_ids]
     titoli_ufficiali = [fonti.parole(v["titolo"]) for n in notizie if n["etichetta"] == fonti.UFFICIALE
                         for v in n["voci"]]
+    scartati_ids = [i for i in ids if i in aperti_ids and not STATO.conferma_plausibile(i, titoli_ufficiali)]
+    if scartati_ids:
+        print(f"Conferme di Gemini senza una notizia ufficiale sullo stesso argomento, ignorate: {scartati_ids}")
+    ids = [i for i in ids if i in aperti_ids and i not in scartati_ids]
     for l in STATO.leak_aperti():
         p = fonti.parole(l["titolo"])
         if any(fonti.simili(p, t, minimo=4, soglia=0.6) for t in titoli_ufficiali):
@@ -656,18 +700,49 @@ def split_text(text: str, limit: int = LIMIT) -> list[str]:
     return chunks
 
 
+def _post_telegram(payload):
+    """POST con nuovi tentativi: 429 (flood limit, attende retry_after), 5xx ed errori di rete.
+    Prima un 429 a metà di un report lungo faceva fallire la run dopo aver già inviato metà messaggi."""
+    r = None
+    for tentativo in range(5):
+        try:
+            r = requests.post(TG_URL, json=payload, timeout=30)
+        except requests.RequestException as e:
+            print(f"[Telegram] errore di rete ({type(e).__name__}), nuovo tentativo")
+            time.sleep(5)
+            continue
+        if r.status_code == 429:
+            try:
+                attesa = int((r.json().get("parameters") or {}).get("retry_after", 5))
+            except (ValueError, AttributeError):
+                attesa = 5
+            print(f"[Telegram] 429, attendo {attesa}s")
+            time.sleep(min(attesa, 60) + 1)
+            continue
+        if r.status_code >= 500:
+            time.sleep(5)
+            continue
+        return r
+    return r
+
+
 def send_chunk(chunk: str) -> None:
     base = {"chat_id": chat_id, "link_preview_options": {"is_disabled": True}}
-    r = requests.post(TG_URL, json={**base, "text": md_to_html(chunk),
-                                    "parse_mode": "HTML"}, timeout=30)
-    if r.status_code == 400:  # formattazione rifiutata -> ripiego su testo semplice
-        r = requests.post(TG_URL, json={**base, "text": chunk}, timeout=30)
-    if not r.ok:  # fa fallire il workflow invece di "passare" senza inviare nulla
-        sys.exit(f"Invio Telegram fallito ({r.status_code}): {r.text}")
+    r = _post_telegram({**base, "text": md_to_html(chunk), "parse_mode": "HTML"})
+    if r is not None and r.status_code == 400:  # formattazione rifiutata -> ripiego su testo semplice
+        r = _post_telegram({**base, "text": chunk})
+    if r is None or not r.ok:  # fa fallire il workflow invece di "passare" senza inviare nulla
+        sys.exit(f"Invio Telegram fallito ({r.status_code if r is not None else 'rete'}): "
+                 f"{r.text[:300] if r is not None else ''}")
 
 
 usati = {norm_link(u) for u in fonti.link_nel_testo(article_text)}
-voci_app = radar.componi(notizie, meta_app, STATO, usati)  # notizie come le mostra Radar
+try:
+    voci_app = radar.componi(notizie, meta_app, STATO, usati)  # notizie come le mostra Radar
+except Exception:  # un errore nei dati per l'app non deve bloccare il report su Telegram
+    traceback.print_exc()
+    print("Dati per Radar non composti: invio comunque il report, Radar resta all'aggiornamento precedente")
+    voci_app = None
 if RADAR_URL:
     article_text = article_text.rstrip() + f"\n\n[📡 Apri il report in Radar]({RADAR_URL})\n"
 
@@ -681,7 +756,7 @@ else:
 # 5. Aggiorna lo storico (il workflow fa il commit di stato.json): solo dopo un invio riuscito.
 # I leak si registrano per notizia come la mostra Radar: due gruppi che Gemini ha unito sono UN leak.
 nuovi = 0
-for e in voci_app:
+for e in voci_app or []:
     if e["_etichetta"] not in (fonti.AFFIDABILE, fonti.RUMOR):
         continue
     if INVIA_TELEGRAM and response is not None and e["in_report"]:  # nel tracker solo i leak del report
@@ -695,10 +770,18 @@ for e in voci_app:
 if INVIA_TELEGRAM:
     if response is not None:
         STATO.segna_inviati([u for u in consentiti if norm_link(u) in usati], adesso)
+        STATO.ultimo_report = adesso.isoformat(timespec="minutes")  # la prossima finestra parte da qui
         print(f"Storico: {nuovi} nuovi leak registrati, {len(confermati)} confermati")
     for l in STATO.scadenze(adesso):
         print(f"Leak mai confermato dopo {fonti.GIORNI_SCADENZA} giorni: [{l['id']}] {l['titolo']} ({l['fonte']})")
     STATO.pulizia(adesso)
     STATO.salva()
-print(f"Radar: report {radar.scrivi(voci_app, STATO, adesso, ORE)} con {len(voci_app)} notizie")
+# Il messaggio è partito e lo storico è salvato: un errore su Radar non deve far fallire la run,
+# altrimenti il workflow non fa il commit di stato.json e il report successivo ripete le stesse notizie
+if voci_app is not None:
+    try:
+        print(f"Radar: report {radar.scrivi(voci_app, STATO, adesso, ORE)} con {len(voci_app)} notizie")
+    except Exception:
+        traceback.print_exc()
+        print("Radar non aggiornato per un errore nei dati (il report Telegram è partito)")
 fase("fine")

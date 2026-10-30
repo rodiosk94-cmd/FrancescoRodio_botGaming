@@ -3,9 +3,12 @@ name: Automated Gaming News Agent
 on:
   schedule:
     # Orari in UTC, uno per l'ora legale e uno per la solare: il passo "Check Italian time"
-    # lascia proseguire solo quello giusto, così il report esce sempre alle 06:00 e alle 20:00 italiane.
-    - cron: '0 4,18 * * *' # ora legale (UTC+2)
-    - cron: '0 5,19 * * *' # ora solare (UTC+1)
+    # lascia proseguire solo quello giusto. Minuto 7 e non 0: allo scoccare dell'ora GitHub è più
+    # congestionato. Il cron di GitHub può comunque partire con ore di ritardo (dal 28/10 anche 6 ore):
+    # per la puntualità serve un trigger esterno (workflow_dispatch alle 06:00 e alle 20:00); questi cron
+    # restano come riserva e Main.py li salta se il report di quel turno è già uscito.
+    - cron: '7 4,18 * * *' # ora legale (UTC+2)
+    - cron: '7 5,19 * * *' # ora solare (UTC+1)
   workflow_dispatch: # Permette di avviare l'automazione manualmente con un pulsante
     inputs:
       telegram:
@@ -40,8 +43,8 @@ jobs:
           OFFSET=$(TZ=Europe/Rome date +%z)
           if [ -z "$CRON" ]; then
             echo "Avvio manuale: procedo"; echo "vai=true" >> "$GITHUB_OUTPUT"
-          elif { [ "$CRON" = "0 4,18 * * *" ] && [ "$OFFSET" = "+0200" ]; } || \
-               { [ "$CRON" = "0 5,19 * * *" ] && [ "$OFFSET" = "+0100" ]; }; then
+          elif { [ "$CRON" = "7 4,18 * * *" ] && [ "$OFFSET" = "+0200" ]; } || \
+               { [ "$CRON" = "7 5,19 * * *" ] && [ "$OFFSET" = "+0100" ]; }; then
             echo "Cron '$CRON' corretto per l'offset $OFFSET: procedo"; echo "vai=true" >> "$GITHUB_OUTPUT"
           else
             echo "Cron '$CRON' non è quello giusto con l'offset $OFFSET: salto"; echo "vai=false" >> "$GITHUB_OUTPUT"
@@ -49,11 +52,11 @@ jobs:
 
       - name: Checkout repository
         if: steps.orario.outputs.vai == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
         if: steps.orario.outputs.vai == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -81,7 +84,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RADAR_URL: ${{ steps.radar.outputs.url }}
           INVIA_TELEGRAM: ${{ github.event_name == 'workflow_dispatch' && !inputs.telegram && '0' || '1' }}
-        run: python -u Main.py # -u = log in tempo reale
+          DA_CRON: ${{ github.event_name == 'schedule' && '1' || '0' }}
+        shell: bash # con pipefail: se Main.py fallisce, fallisce anche il passo nonostante tee
+        run: python -u Main.py 2>&1 | tee run.log # -u = log in tempo reale; run.log serve alla notifica d'errore
 
       - name: Save history
         if: steps.orario.outputs.vai == 'true'
@@ -97,6 +102,35 @@ jobs:
           git commit -m "Aggiorna storico leak, notizie inviate e dati di Radar [skip ci]"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      # Se qualcosa va storto arriva un messaggio su Telegram con le ultime righe del log
+      # (i log di Actions non sempre sono comodi da aprire dal telefono)
+      - name: Notify failure on Telegram
+        if: (failure() || cancelled()) && steps.orario.outputs.vai == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          try:
+              coda = open("run.log", encoding="utf-8", errors="replace").read().splitlines()[-25:]
+          except OSError:
+              coda = ["(log non disponibile: il job si è fermato prima di Main.py)"]
+          testo = "\n".join(r[:300] for r in coda)
+          for segreto in (os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("GEMINI_API_KEY")):
+              if segreto:
+                  testo = testo.replace(segreto, "***")
+          msg = f"⚠️ Bot gaming: report non generato\n{os.environ['RUN_URL']}\n\nUltime righe del log:\n{testo}"[:4000]
+          req = urllib.request.Request(
+              f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
+              data=json.dumps({"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": msg,
+                               "link_preview_options": {"is_disabled": True}}).encode(),
+              headers={"Content-Type": "application/json"})
+          urllib.request.urlopen(req, timeout=30)
+          PY
 
   # Pubblica Radar con i dati appena scritti (salta da solo se GitHub Pages non è attivo)
   deploy-radar:

@@ -1,14 +1,5 @@
 {
- "fonti": {
-  "gamingbolt.com": {
-   "confermati": 1,
-   "non_confermati": 0
-  },
-  "neogaf.com": {
-   "confermati": 1,
-   "non_confermati": 0
-  }
- },
+ "fonti": {},
  "inviati": {
   "https://aftermath.site/sucker-punch-layoffs-sony-ghost-of-yotei": "2026-10-26T19:35+00:00",
   "https://blog.playstation.com/2026/10/26/20261027-roll": "2026-10-27T05:25+00:00",
@@ -118,12 +109,11 @@
     "PS6 Price Tag Facing $1,000+ Nightmare as AI Data Centres Send Component Costs Soaring"
    ],
    "data": "2026-10-18",
-   "data_esito": "2026-10-20",
    "etichetta": "🟡 RUMOR",
    "fonte": "neogaf.com",
    "id": "a31473",
    "link": "https://www.neogaf.com/threads/keplerl2-ps6-is-40-tflops-and-helix-is-56-tflops-final-layouts-taped-out.1701752/page-36#post-272101878",
-   "stato": "confermato",
+   "stato": "aperto",
    "titolo": "PS6, il prezzo potrebbe superare i 1000 dollari"
   },
   {
@@ -152,12 +142,11 @@
   },
   {
    "data": "2026-10-19",
-   "data_esito": "2026-10-20",
    "etichetta": "🟡 RUMOR",
    "fonte": "gamingbolt.com",
    "id": "2dcd0b",
    "link": "https://gamingbolt.com/ps6s-ram-and-nand-is-over-680-total-cost-could-exceed-1000-rumor",
-   "stato": "confermato",
+   "stato": "aperto",
    "titolo": "PlayStation 6, rumor sui costi di produzione: BOM oltre i 1.000 dollari"
   },
   {

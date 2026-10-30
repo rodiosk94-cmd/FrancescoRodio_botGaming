@@ -89,9 +89,18 @@ def _e_community(url):
     return any(dominio(url).endswith(d) for d in COMMUNITY)
 
 
+_FILE_STATICO = re.compile(r"\.(?:jpe?g|png|gif|webp|avif|svg|mp4|webm|m3u8|pdf)$", re.I)
+
+
+def _e_statico(url):
+    """Immagini, video e file su CDN: non sono una fonte (es. cdn.mos.cms.futurecdn.net/....jpg)."""
+    d = dominio(url)
+    return bool(_FILE_STATICO.search(urlparse(url).path)) or "cdn" in d.split(".")[0] or "futurecdn" in d
+
+
 def classifica_url(url):
     """(tipo, chiave) per un link citato: 'ufficiale', 'insider' o 'testata'; None se non è una fonte."""
-    if not url.startswith("http"):
+    if not url.startswith("http") or _e_statico(url):
         return None
     if _UFFICIALI.match(url):
         return ("ufficiale", dominio(url))
@@ -143,17 +152,18 @@ def trova_origini(v, paragrafi=(), link_pagina=()):
         c = classifica_url(u)
         if c and (_BSKY_POST.match(u) or _X_POST.match(u)):
             aggiungi(*c, u)
-    for _, links in paragrafi:  # comunicati ufficiali: solo se linkati nel testo dell'articolo
+    titolo_voce = v.get("titolo", "")
+    for _, links in paragrafi:  # comunicati ufficiali: solo se linkati nel testo e sullo stesso argomento
         for u in links:
             c = classifica_url(u)
-            if c and c[0] == "ufficiale":
+            if c and c[0] == "ufficiale" and ufficiale_pertinente(u, titolo_voce):
                 aggiungi(*c, u)
     for testo, links in paragrafi:
         if not _ATTRIBUZIONE.search(testo):
             continue
         for u in links:
             c = classifica_url(u)
-            if c:
+            if c and (c[0] != "ufficiale" or ufficiale_pertinente(u, titolo_voce)):
                 aggiungi(*c, u)
         for nome in insider_nominati(testo):
             aggiungi("insider", nome)
@@ -163,6 +173,22 @@ def trova_origini(v, paragrafi=(), link_pagina=()):
         aggiungi("insider", _DOMINIO_INSIDER[proprio], v.get("link"))
     peso = {"ufficiale": 0, "insider": 1, "testata": 2}
     return sorted(trovate.values(), key=lambda o: peso[o["tipo"]])
+
+
+_GENERICHE = {"xbox", "plays", "ps5", "ps6", "ninte", "switc", "switch2", "steam", "news", "blog", "game",
+              "games", "gioco", "giochi", "video", "annou", "en-us", "en-gb", "view", "detai", "2025", "2026",
+              "xboxseries", "store", "html", "index", "aspx", "press", "relea", "artic", "post"}
+
+
+def ufficiale_pertinente(url, titolo):
+    """Un link a un comunicato dentro un articolo conta come fonte solo se parla della stessa cosa:
+    PC Gamer che linka un vecchio post di Xbox Wire in un pezzo di gossip non rende la notizia ufficiale.
+    Se l'indirizzo non ha parole (es. Steam News /view/693149…) non si può giudicare: vale."""
+    slug = parole(" ".join(re.split(r"[/\-_.]+", urlparse(url).path))) - _GENERICHE
+    slug = {w for w in slug if not any(ch.isdigit() for ch in w) and len(w) > 2}
+    if len(slug) < 2:
+        return True
+    return len(slug & (parole(titolo) - _GENERICHE)) >= 2
 
 
 _NOMI_SITI = re.compile(r"insider[- ]gaming|business insider|xbox insider\w*|windows insider\w*", re.I)
@@ -262,9 +288,12 @@ class Stato:
         self.inviati = d.get("inviati", {})   # link normalizzato → data ISO
         self.leak = d.get("leak", [])         # {id, titolo, fonte, link, etichetta, data, stato, data_esito}
         self.fonti = d.get("fonti", {})       # chiave → {"confermati": n, "non_confermati": n}
+        self.ultimo_report = d.get("ultimo_report")  # ISO UTC dell'ultimo report inviato con Gemini
 
     def salva(self):
         d = {"inviati": self.inviati, "leak": self.leak, "fonti": self.fonti}
+        if self.ultimo_report:
+            d["ultimo_report"] = self.ultimo_report
         self.path.write_text(json.dumps(d, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
     # --- affidabilità -------------------------------------------------------
@@ -341,6 +370,21 @@ class Stato:
         # i leak chiusi servono solo come storico dei punteggi (già in self.fonti): tengo l'ultimo anno
         anno = (adesso - timedelta(days=365)).date().isoformat()
         self.leak = [l for l in self.leak if l["stato"] == "aperto" or l.get("data_esito", "") >= anno]
+
+
+    def conferma_plausibile(self, lid, titoli_ufficiali):
+        """Una conferma segnalata da Gemini vale solo se il leak condivide almeno due parole
+        significative con il titolo di una notizia ufficiale di oggi (titolo o alias del leak).
+        Evita conferme inventate: il 20/10 due leak sul prezzo di PS6 risultavano confermati
+        senza nessun comunicato su PS6 nel report."""
+        l = next((x for x in self.leak if x["id"] == lid), None)
+        if not l:
+            return False
+        for t in [l["titolo"], *l.get("alias", [])]:
+            p = parole(t)
+            if any(len(p & u) >= 2 for u in titoli_ufficiali):
+                return True
+        return False
 
 
 # ---------------------------------------------------------------------------
