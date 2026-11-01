@@ -1,7 +1,12 @@
 {
- "fonti": {},
+ "fonti": {
+  "google.com": {
+   "confermati": 1,
+   "non_confermati": 0
+  }
+ },
  "inviati": {
-  "https://bsky.app/profile/did:plc:2mkgbhbhqvappkkorf2bzyrp/post/3mz3ygdnwnk2r": "2026-10-31T22:29+00:00",
+  "https://bsky.app/profile/did:plc:2mkgbhbhqvappkkorf2bzyrp/post/3mz3ygdnwnk2r": "2026-11-01T22:48+00:00",
   "https://bsky.app/profile/jasonschreier.bsky.social/post/3mz3ygdnwnk2r": "2026-10-31T22:29+00:00",
   "https://console-tribe.com/news/final-fantasy-xiv-zephyr-e-il-secondo-nuovo-job-dellespansione-evercold-356692": "2026-10-31T22:29+00:00",
   "https://console-tribe.com/news/gears-of-war-e-day-avrebbe-venduto-solo-400-000-copie-356596": "2026-10-30T11:12+00:00",
@@ -11,7 +16,9 @@
   "https://gameinformer.com/2026/10/30/ea-reportedly-closed-bioware-to-invest-in-developing-star-wars-battlefront-iii-instead": "2026-10-30T20:47+00:00",
   "https://gameinformer.com/2026/10/31/shigeru-miyamoto-proclaims-november-1-is-pikmin-day-pikmin-4-demo-coming-to-switch-2": "2026-11-01T11:49+00:00",
   "https://gamingbolt.com/cairn-on-the-trail-deep-water-dlc-out-now-adds-free-roam-and-playable-marco": "2026-10-31T10:54+00:00",
+  "https://gamingbolt.com/days-gone-studios-next-is-a-third-person-co-op-title-targeting-2027-rumor": "2026-11-01T22:48+00:00",
   "https://gamingbolt.com/mass-effect-5-canceled-bioware-closed-because-ea-chose-to-focus-on-star-wars-battlefront-3-rumor": "2026-10-30T20:47+00:00",
+  "https://gamingbolt.com/star-wars-jedi-3-is-far-in-development-and-could-be-announced-soon-rumor": "2026-11-01T22:48+00:00",
   "https://gofile.io/d/orqjllzv": "2026-10-31T22:29+00:00",
   "https://insider-gaming.com/final-fantasy-14-evercold-release-date": "2026-10-31T22:29+00:00",
   "https://insider-gaming.com/hello-pikmin-nintendo-pictures-explained": "2026-10-31T22:29+00:00",
@@ -23,6 +30,8 @@
   "https://kotaku.com/final-fantasy-14-evercold-gets-a-month-long-delay-but-an-awesome-new-trailer-2000751936": "2026-10-31T22:29+00:00",
   "https://kotaku.com/shigeru-miyamoto-declares-november-1st-pikmin-day-in-surprise-nintendo-direct-2000751948": "2026-10-31T22:29+00:00",
   "https://kotaku.com/the-case-for-exclusivity-when-gears-of-war-e-day-cost-over-500-million-to-make-2000747986": "2026-10-30T20:47+00:00",
+  "https://kotaku.com/valves-cancelled-portal-prequel-f-stop-has-leaked-2000752082": "2026-11-01T22:48+00:00",
+  "https://mp1st.com/news/report-bend-studios-next-game-is-a-third-person-co-op-game-reveal-set-for-2027": "2026-11-01T22:48+00:00",
   "https://multiplayer.it/notizie/dune-awakening-ricevera-espansione-gratuita-blood-and-ice-con-nuove-ambientazioni-glaciali.html": "2026-10-31T22:29+00:00",
   "https://multiplayer.it/notizie/fromsoftware-sospende-i-server-di-dark-souls-2-e-3-nessuna-data-per-il-ripristino.html": "2026-10-30T20:47+00:00",
   "https://multiplayer.it/notizie/gears-of-war-e-day-pare-essere-costato-davvero-500-milioni-di-dollari.html": "2026-10-30T20:47+00:00",
@@ -31,40 +40,50 @@
   "https://news.xbox.com/en-us/2026/09/29/xbox-insiders-october-2026-console-features-4": "2026-11-01T11:49+00:00",
   "https://news.xbox.com/en-us/2026/10/29/crimson-desert-charting-the-unknown": "2026-10-30T11:12+00:00",
   "https://skyblivion.com": "2026-10-31T22:29+00:00",
-  "https://store.steampowered.com/news/app/1172710/view/714542561332560354": "2026-10-31T22:29+00:00",
+  "https://store.steampowered.com/news/app/1172710/view/714542561332560354": "2026-11-01T22:48+00:00",
   "https://store.steampowered.com/news/app/1588550/view/667254765243072858": "2026-10-31T10:54+00:00",
+  "https://store.steampowered.com/news/app/3355360/view/688643694674315785": "2026-11-01T22:48+00:00",
   "https://streamable.com/up2hup": "2026-10-31T22:29+00:00",
   "https://thegamepost.com/playstation-store-dynamic-pricing-sony-intelligent-pricing-targeted-offers": "2026-10-31T10:54+00:00",
   "https://warhorsestudios.cz/en/incident": "2026-10-31T22:29+00:00",
+  "https://wccftech.com/bend-studio-third-person-co-op-game-2027-report": "2026-11-01T22:48+00:00",
   "https://wccftech.com/crimson-desert-dlc-huge-ocean-map-underwater-exploration-naval-battles-dragons-destroying-ships": "2026-10-30T11:12+00:00",
   "https://www.akibagamers.it/30-10-2026/death-stranding-isolations-teaser-trailer-e-primi-dettagli": "2026-10-30T20:47+00:00",
   "https://www.bloomberg.com/news/articles/2026-10-21/electronic-arts-to-cut-400-jobs-shut-down-bioware": "2026-10-30T20:47+00:00",
   "https://www.bloomberg.com/news/newsletters/2026-10-30/why-electronic-arts-shut-down-bioware-and-cancelled-mass-effect": "2026-10-31T22:29+00:00",
+  "https://www.destructoid.com/gog-wants-to-bring-back-pc-discs": "2026-11-01T22:48+00:00",
   "https://www.destructoid.com/star-wars-battlefront-3-final-nail-coffin-bioware-mass-effect": "2026-10-30T20:47+00:00",
   "https://www.destructoid.com/star-wars-jedi-3-far-in-development": "2026-10-31T22:29+00:00",
   "https://www.eurogamer.net/dark-souls-servers-temporarily-shutting-down-fromsoftware": "2026-10-30T20:47+00:00",
+  "https://www.eurogamer.net/dune-awakening-blood-and-ice-free-expansion": "2026-11-01T22:48+00:00",
   "https://www.eurogamer.net/ea-closed-bioware-because-star-wars-battlefront-3": "2026-10-30T20:47+00:00",
   "https://www.eurogamer.net/elder-scrolls-6-reportedly-revealed-november": "2026-10-30T20:47+00:00",
+  "https://www.eurogamer.net/persona-1-remake-be-your-true-mind-leak": "2026-11-01T22:48+00:00",
   "https://www.eurogamer.net/pikmin-4-switch-2-edition-release-date-demo": "2026-11-01T11:49+00:00",
   "https://www.eurogamer.net/skyblivion-former-volunteer-legal-threats": "2026-10-31T22:29+00:00",
   "https://www.everyeye.it/notizie/dark-souls-2-3-succede-fromsoftware-spegne-server-problema-tecnico-908956.html": "2026-10-30T20:47+00:00",
   "https://www.everyeye.it/notizie/gears-of-war-e-day-jason-schreier-conferma-costato-davvero-500-milioni-microsoft-908964.html": "2026-10-30T20:47+00:00",
   "https://www.everyeye.it/notizie/persona-spunta-online-video-svela-possibile-remake-capitolo-909124.html": "2026-11-01T11:49+00:00",
+  "https://www.gamesource.it/notizie/bend-studio-il-nuovo-gioco-per-ps5-2027": "2026-11-01T22:48+00:00",
   "https://www.gamesource.it/notizie/resonance-of-fate-enhanced-remaster-ps5-pc": "2026-10-30T11:12+00:00",
   "https://www.gamesource.it/notizie/the-elder-scrolls-vi-chiamarsi-sentinel": "2026-10-30T20:47+00:00",
   "https://www.gamespot.com/articles/ea-reportedly-chose-an-unannounced-star-wars-game-over-biowares-next-mass-effect": "2026-10-30T20:47+00:00",
   "https://www.gamesradar.com/games/dark-souls/fromsoftware-has-ominous-news-dark-souls-2-and-dark-souls-3-are-shutting-down-servers-indefinitely-and-i-hope-we-dont-see-a-repeat-of-2022s-massive-outage": "2026-10-30T20:47+00:00",
   "https://www.gamesradar.com/games/final-fantasy/final-fantasy-14-evercold-gets-a-four-week-delay-the-mmos-new-expansion-now-launches-in-next-years-very-busy-february-season": "2026-10-31T22:29+00:00",
   "https://www.gamesradar.com/games/final-fantasy/final-fantasy-14-theorists-were-right-all-along-evercolds-second-job-is-the-ranged-zephyr-dps-that-uses-crossbows-and-a-deadly-pet-bird": "2026-10-31T22:29+00:00",
+  "https://www.gamesradar.com/games/persona/two-minutes-of-persona-1-remake-footage-seemingly-leaks-online-weeks-after-atlus-said-it-was-considering-more-jrpg-revivals": "2026-11-01T22:48+00:00",
+  "https://www.gamesradar.com/games/physical-pc-games-could-make-a-comeback-thanks-to-gog-i-really-hope-that-well-be-able-to-do-it": "2026-11-01T22:48+00:00",
   "https://www.gamesradar.com/games/the-elder-scrolls/fan-made-oblivion-remake-skyblivion-runs-into-trouble-as-a-former-modder-is-attempting-to-sue-the-14-year-old-elder-scrolls-project": "2026-10-31T22:29+00:00",
   "https://www.gematsu.com/2026/10/death-stranding-isolations-teaser-trailer-first-details": "2026-10-30T11:12+00:00",
   "https://www.gematsu.com/2026/10/final-fantasy-xiv-evercold-expansion-delayed-to-february-23-2027": "2026-10-31T10:54+00:00",
   "https://www.gematsu.com/2026/10/resonance-of-fate-enhanced-remaster-now-available-for-ps5-pc": "2026-10-30T11:12+00:00",
+  "https://www.gematsu.com/2026/11/petit-planet-coming-to-switch-2-in-2027": "2026-11-01T22:48+00:00",
   "https://www.ign.com/articles/death-stranding-isolations-anime-gets-first-trailer": "2026-10-30T11:12+00:00",
   "https://www.ign.com/articles/gears-of-war-e-day-reportedly-sold-over-400k-copies-across-console-and-pc-a-month-after-day-one-game-pass-launch": "2026-10-30T11:12+00:00",
   "https://www.ign.com/articles/mass-effect-5-and-bioware-reportedly-died-so-star-wars-battlefront-3-could-live": "2026-10-30T20:47+00:00",
   "https://www.ign.com/articles/nintendo-reveals-surprise-pikmin-day-direct": "2026-10-31T22:29+00:00",
   "https://www.ign.com/articles/persona-1-remake-footage-seemingly-leaks-online": "2026-10-31T22:29+00:00",
+  "https://www.ign.com/articles/petit-planet-switch-2-release-date": "2026-11-01T22:48+00:00",
   "https://www.mmorpg.com/news/final-fantasy-xiv-evercold-delayed-till-february-2027-2000139231": "2026-10-31T22:29+00:00",
   "https://www.nintendolife.com/news/2026/10/bethesda-is-reportedly-ready-to-reveal-the-official-title-of-the-elder-scrolls-vi": "2026-10-30T11:12+00:00",
   "https://www.nintendolife.com/news/2026/10/final-fantasy-xiv-onlines-sixth-expansion-evercold-launches-february-2027": "2026-10-31T10:54+00:00",
@@ -89,13 +108,17 @@
   "https://www.reddit.com/r/gamingleaksandrumours/comments/1xkesmu/persona_be_your_true_mind_remake_gameplay_leak": "2026-10-31T22:29+00:00",
   "https://www.resetera.com/threads/footage-of-an-alleged-persona-1-remake-has-leaked.1675604": "2026-10-31T22:29+00:00",
   "https://www.resetera.com/threads/warhorse-kingdom-come-deliverance-studio-dealing-with-a-serious-cybersecurity-incident.1675457": "2026-10-31T22:29+00:00",
+  "https://www.rockpapershotgun.com/dune-awakenings-seasonally-appropriate-blood-and-ice-expansion-gets-a-december-release-date-and-in-a-plus-for-preservation-an-offline-mode-this-month": "2026-11-01T22:48+00:00",
+  "https://www.rockpapershotgun.com/persona-3-remake-and-jet-set-radio-reboot-footage-seemingly-leaks-online": "2026-11-01T22:48+00:00",
   "https://www.siliconera.com/one-piece-pirate-warriors-4-losing-film-red-song-pack": "2026-10-31T10:54+00:00",
   "https://www.thegamer.com/kingdom-come-deliverance-developer-warhorse-serious-cybersecurity-incident": "2026-10-31T22:29+00:00",
+  "https://www.theverge.com/games/1024206/playable-portal-prequel-f-stop-leak": "2026-11-01T22:48+00:00",
   "https://www.theverge.com/tech/1022023/microsoft-exit-offer-layoffs-notepad": "2026-10-30T20:47+00:00",
   "https://x.com/droolvana/status/2116575962724704424": "2026-10-31T22:29+00:00",
   "https://x.com/fromsoftware_sp/status/2116088984703209689": "2026-10-31T22:29+00:00",
   "https://x.com/johnnylockson/status/2116595146787889369": "2026-10-31T22:29+00:00",
-  "https://x.com/osu_meovvcat/status/2116590573125583210": "2026-10-31T22:29+00:00"
+  "https://x.com/osu_meovvcat/status/2116590573125583210": "2026-10-31T22:29+00:00",
+  "https://x.com/petitplanetgame/status/2116855187088502880": "2026-11-01T22:48+00:00"
  },
  "leak": [
   {
@@ -170,7 +193,8 @@
   },
   {
    "alias": [
-    "EA chiude BioWare per puntare su Star Wars Battlefront 3"
+    "EA chiude BioWare per puntare su Star Wars Battlefront 3",
+    "Star Wars Jedi 3: sviluppo avanzato e possibile annuncio vicino"
    ],
    "data": "2026-10-20",
    "etichetta": "🟢 LEAK AFFIDABILE",
@@ -472,7 +496,8 @@
   },
   {
    "alias": [
-    "Rumor: spunta online un presunto video del remake di Persona 1"
+    "Rumor: spunta online un presunto video del remake di Persona 1",
+    "Leak online per il presunto filmato del remake di Persona 1"
    ],
    "data": "2026-10-31",
    "etichetta": "🟢 LEAK AFFIDABILE",
@@ -493,13 +518,23 @@
   },
   {
    "data": "2026-11-01",
+   "data_esito": "2026-11-01",
    "etichetta": "🟢 LEAK AFFIDABILE",
    "fonte": "google.com",
    "id": "087589",
    "link": "http://google.com/search?q=bend+studio&sca_esv=96f59e00825062f8&sxsrf=AKL5yDjCw6Ph8Q149JD-JNxloB6vPpW8tA%3A1793532641021&source=hp&ei=4CLnavelPKrr-d8P4P6_4Ag&iflsig=AHSINFcAAAAAaucw8WlGmYujjckNDMW1kuox3OpS8gsQ&gs_ssp=eJzj4tVP1zc0TEo2tTQvrzBTYDRgdGDw4k5KzUtRKC4pTcnMBwCJAAkG&oq=bend+st&gs_lp=Egdnd3Mtd2l6IgdiZW5kIHN0KhEIABiABBixAxiDARjHARjRAzIREC4YgAQYsQMYgwEYxwEY0QMyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIIEAAYgAQYywEyCBAAGIAEGMsBMggQABiABBjLATIIEAAYgAQYywFIjBdQAFiODXAAeACQAQCYAWSgAYYFqgEDNS4yuAEByAEA-AEBmAIHoAK6BcICBBAjGCfCAgsQLhiABBixAxiDAcICDhAAGIAEGIoFGLEDGIMBwgILEAAYgAQYsQMYgwHCAgQQABgDwgIKECMY8AUYyQIYJ8ICDhAuGIAEGLEDGMcBGNEDwgIIEAAYgAQYsQPCAggQLhiABBixA8ICChAuGIAEGIoFGEPCAg0QABiABBiKBRhDGLQHwgIQEC4YgAQYigUYQxixAxiDAcICBRAuGIAEwgIIEAAYgAQYtAfCAgcQABiABBgKmAMAkgcDMy40oAerTrIHAzMuNLgHugXCBwcwLjIuNC4xyAclgAgB&sclient=gws-wiz",
-   "stato": "aperto",
+   "stato": "confermato",
    "titolo": "Bend Studio: il nuovo gioco per PS5 atteso nel 2027"
+  },
+  {
+   "data": "2026-11-01",
+   "etichetta": "🟢 LEAK AFFIDABILE",
+   "fonte": "kotaku.com",
+   "id": "bd38e9",
+   "link": "https://www.theverge.com/games/1024206/playable-portal-prequel-f-stop-leak",
+   "stato": "aperto",
+   "titolo": "F-Stop: la versione giocabile del prequel perduto di Portal online"
   }
  ],
- "ultimo_report": "2026-11-01T11:49+00:00"
+ "ultimo_report": "2026-11-01T22:48+00:00"
 }
